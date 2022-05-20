@@ -5470,7 +5470,9 @@ static int com_resetconnection(String *buffer [[maybe_unused]],
 }
 
 
-
+#define MAX_NAME      500
+#define MAX_SQL_LINE  1000
+#define MAX_SQL_LINE2 1000*2
 
 char* convert_color_name_to_code(char* color_name){
   if(color_name!=nullptr){
@@ -5577,29 +5579,29 @@ void resolve_mysql_info_by_port(int current_port){
   // If no port is specified, then current_port is "0"
   current_port = (current_port==0) ? 3306 : current_port;
 
-  char buffer[512+1];
-  snprintf(buffer, 512, "%s/%s", script_dir, "port_host_map.list");
+  char temp_buffer[MAX_NAME+1];
+  snprintf(temp_buffer, MAX_NAME, "%s/%s", script_dir, "port_host_map.list");
 
   std::ifstream port_host_file;
-  port_host_file.open(buffer);
+  port_host_file.open(temp_buffer);
   if(port_host_file.is_open() == false){
     // remote_real_hostname = my_strdup(PSI_NOT_INSTRUMENTED, "NoHostmapFile", MYF(MY_WME));
     remote_real_hostname = nullptr;
   }else{
-    bool is_unknown_format = false;
+    // bool is_unknown_format = false;
     int temp_port;
-    char temp_host[128+1];
+    char temp_host[MAX_NAME+1];
     while(!port_host_file.eof()){
-      port_host_file.getline(buffer, 512);
-      int read_parts = std::sscanf(buffer, "%d %s", &temp_port, temp_host);
+      port_host_file.getline(temp_buffer, MAX_NAME);
+      int read_parts = std::sscanf(temp_buffer, "%d %s", &temp_port, temp_host);
       if(read_parts==2){
         if(temp_port == current_port){
           remote_real_hostname = my_strdup(PSI_NOT_INSTRUMENTED, temp_host, MYF(MY_WME));
 	  break;
         }
-      }else{
-        is_unknown_format = true;
-      }
+      } //else{
+      //   is_unknown_format = true;
+      //}
     }
     //if(remote_real_hostname==nullptr){
     //  if(is_unknown_format==true){
@@ -5641,25 +5643,21 @@ void resolve_aurora_info(){
   }
 }
 
-bool process_sql_line(char* str, int len){
+bool normalize_sql_line(char* str, int len){
   bool is_ended_with_delimiter = false;
   char* end = str + len - 1;
-  while(end!=str && *end=='\0'){
-    /* sometimes, ifstream.gcount() tell bigger than real string length */
-    end--;
-  }
-  while(end!=str && isspace(*end)){
+  /* sometimes, ifstream.gcount() tell bigger than real string length, so skip NULL character */
+  while(end>str && (*end=='\0' || isspace(*end))){
     *end = '\0';
     end--;
   }
 
-  is_ended_with_delimiter = (*end==';' || (*end=='G' && --end!=str && *end=='\\'));
+  /* vertical mode can not be used in this context */
+  // is_ended_with_delimiter = (*end==';' || (*end=='G' && --end>=str && *end=='\\'));
+  is_ended_with_delimiter = (*end==';');
   return is_ended_with_delimiter;
 }
 
-#define MAX_NAME      500
-#define MAX_SQL_LINE  1000
-#define MAX_SQL_LINE2 1000*2
 int process_bind_variables(char* sql_line, int buffer_len, int str_len){
   bool in_variable1 = false;
   bool in_variable2 = false;
@@ -5687,7 +5685,7 @@ int process_bind_variables(char* sql_line, int buffer_len, int str_len){
       current_varname = var_name;
 
       /* read in binding parameter from user */
-      snprintf(readline_prompt, MAX_NAME, "  > parameter #{%s}: ", var_name);
+      snprintf(readline_prompt, MAX_NAME, "  > parameter #{%.200s}: ", var_name);
       readline_prompt[MAX_NAME] = '\0';
       char* input_value = readline(readline_prompt);
       /* check buffer length */
@@ -5787,7 +5785,8 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
     }else{
       glob_buffer.append( STRING_WITH_LEN("  SELECT ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_TYPE, IS_DETERMINISTIC, EXTERNAL_LANGUAGE \n") );
       glob_buffer.append( STRING_WITH_LEN("  FROM information_schema.ROUTINES \n") );
-      glob_buffer.append( STRING_WITH_LEN("  WHERE ROUTINE_SCHEMA NOT IN ('sys', 'information_schema', 'mysql', 'performance_schema'\n) ") );
+      glob_buffer.append( STRING_WITH_LEN("  WHERE ROUTINE_SCHEMA NOT IN ('sys', 'information_schema', 'mysql', 'performance_schema') \n") );
+      glob_buffer.append( STRING_WITH_LEN("    AND ROUTINE_TYPE='FUNCTION' \n") );
       glob_buffer.append( STRING_WITH_LEN("  ORDER BY ROUTINE_SCHEMA, ROUTINE_TYPE, ROUTINE_NAME;") );
     }
   }else if(sub_command[0]=='p' && sub_command[1]==0){
@@ -5800,6 +5799,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
       glob_buffer.append( STRING_WITH_LEN("  SELECT ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_TYPE, IS_DETERMINISTIC, EXTERNAL_LANGUAGE \n") );
       glob_buffer.append( STRING_WITH_LEN("  FROM information_schema.ROUTINES \n") );
       glob_buffer.append( STRING_WITH_LEN("  WHERE ROUTINE_SCHEMA NOT IN ('sys', 'information_schema', 'mysql', 'performance_schema') \n") );
+      glob_buffer.append( STRING_WITH_LEN("    AND ROUTINE_TYPE='PROCEDURE' \n") );
       glob_buffer.append( STRING_WITH_LEN("  ORDER BY ROUTINE_SCHEMA, ROUTINE_TYPE, ROUTINE_NAME;") );
     }
   }else if(sub_command[0]=='t' && sub_command[1]=='g'){
@@ -5813,6 +5813,19 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
       glob_buffer.append( STRING_WITH_LEN("  FROM information_schema.TRIGGERS \n") );
       glob_buffer.append( STRING_WITH_LEN("  WHERE TRIGGER_SCHEMA NOT IN ('sys', 'information_schema', 'mysql', 'performance_schema') \n") );
       glob_buffer.append( STRING_WITH_LEN("  ORDER BY TRIGGER_SCHEMA, TRIGGER_NAME;") );
+    }
+  }else if(sub_command[0]=='u' && sub_command[1]==0){
+    vertical = false;
+    if(strlen(object_name)>0){
+      glob_buffer.append( STRING_WITH_LEN("  SHOW CREATE USER ") );
+      glob_buffer.append( object_name, strlen(object_name) );
+      glob_buffer.append( STRING_WITH_LEN(";\n") );
+      glob_buffer.append( STRING_WITH_LEN("  SHOW GRANTS FOR ") );
+      glob_buffer.append( object_name, strlen(object_name) );
+      glob_buffer.append( STRING_WITH_LEN(";") );
+    }else{
+      // if object name is not specified, list all tables
+      glob_buffer.append( STRING_WITH_LEN("  SELECT user, host, account_locked, plugin as auth_plugin FROM mysql.user; ") );
     }
   }else if(sub_command[0]=='f' && sub_command[1]=='s'){
     vertical = false;
@@ -5892,27 +5905,29 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         is_ended_with_delimier = false;
         int line_no = 0;
 	int read_bytes = 0;
-        char buffer[MAX_SQL_LINE2+1];
+        char temp_buffer[MAX_SQL_LINE2+1];
 	while(!script_file.eof()){
-          memset(buffer, 0, MAX_SQL_LINE2+1);
+          memset(temp_buffer, 0, MAX_SQL_LINE2+1);
 	  /* read only MAX_SQL_LINE (not MAX_SQL_LINE2), MAX_SQL_LINE2 is for after variable value binded */
-          script_file.getline(buffer, MAX_SQL_LINE);
+          script_file.getline(temp_buffer, MAX_SQL_LINE);
 	  read_bytes = script_file.gcount();
 	  if(read_bytes<=0) continue;
 
-	  buffer[MAX_SQL_LINE] = '\0';
-	  is_ended_with_delimier = process_sql_line(buffer, read_bytes);
-	  int rtn = process_bind_variables(buffer, MAX_SQL_LINE2, read_bytes);
+	  temp_buffer[MAX_SQL_LINE] = '\0';
+	  is_ended_with_delimier = normalize_sql_line(temp_buffer, read_bytes);
+	  int rtn = process_bind_variables(temp_buffer, MAX_SQL_LINE2, read_bytes);
           if(rtn<0){
             glob_buffer.length(0);
-            glob_buffer.append( STRING_WITH_LEN("SELECT 'Failed to bind parameter value' as error_message") );
-            break;
+            char error_message[MAX_SQL_LINE+1];
+            snprintf(error_message, MAX_SQL_LINE, "Failed to bind parameter value");
+            error_message[MAX_SQL_LINE] = '\0';
+            return put_info(error_message, INFO_ERROR, 0);
           }
 
 	  if(line_no++>0){
             glob_buffer.append(STRING_WITH_LEN("\n"));
 	  }
-          glob_buffer.append(STRING_WITH_LEN(buffer));
+          glob_buffer.append(temp_buffer, strlen(temp_buffer));
 	}
 
         if(!is_ended_with_delimier){
@@ -5963,14 +5978,18 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
       glob_buffer.append( STRING_WITH_LEN("  FROM information_schema.innodb_trx tx \n") );
       glob_buffer.append( STRING_WITH_LEN("    LEFT JOIN performance_schema.threads th ON th.processlist_id=tx.trx_mysql_thread_id \n") );
       glob_buffer.append( STRING_WITH_LEN("  WHERE tx.trx_state IN ('RUNNING', 'LOCK WAIT', 'ROLLING BACK', 'COMMITTING') \n") );
-      char buffer[MAX_SQL_LINE+1];
-      strcpy(buffer, "  AND (unix_timestamp(now()) - unix_timestamp(tx.trx_started))>=#{THRESHOLD_SECONDS};");
-      int rtn = process_bind_variables(buffer, MAX_SQL_LINE, strlen(buffer));
+      char temp_buffer[MAX_SQL_LINE+1];
+      strcpy(temp_buffer, "  AND (unix_timestamp(now()) - unix_timestamp(tx.trx_started))>=#{THRESHOLD_SECONDS};");
+      int rtn = process_bind_variables(temp_buffer, MAX_SQL_LINE, strlen(temp_buffer));
       if(rtn<0){
         glob_buffer.length(0);
-        glob_buffer.append( STRING_WITH_LEN("SELECT 'Failed to bind parameter value' as error_message;") );
+        char error_message[MAX_SQL_LINE+1];
+        snprintf(error_message, MAX_SQL_LINE, "Failed to bind parameter value");
+        error_message[MAX_SQL_LINE] = '\0';
+        return put_info(error_message, INFO_ERROR, 0);
       }else{
-        glob_buffer.append( STRING_WITH_LEN(buffer) );
+        glob_buffer.append( temp_buffer, strlen(temp_buffer) );
+        glob_buffer.append( STRING_WITH_LEN(";") );
       }
       /*
       if(sub_command[2]!=0 && my_isdigit(&my_charset_utf8mb4_bin, sub_command[2])){
@@ -5991,7 +6010,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
       }
      */
   }else{
-    return put_info("Unknown command\n\n>>Usage ::\n    d               : SHOW DATABASES\n    d [name]        : SHOW CREATE DATABASE (name)\n    t               : SHOW TABLES\n    t [name]        : SHOW CREATE TABLE (name)\n    f               : SHOW all FUNCTIONs\n    f [name]        : SHOW CREATE FUNCTION (name)\n    p               : SHOW all PROCEDUREs\n    p [name]        : SHOW CREATE PROCEDURE (name)\n    tg              : SHOW all TRIGGERs\n    tg [name]       : SHOW CREATE TRIGGER (name)\n    ps              : SHOW PROCESSLIST\n    ps+             : SHOW FULL PROCESSLIST\n    rm (or rp)      : SHOW MASTER STATUS\n    rs (or rr)      : SHOW REPLICA STATUS\n    v               : SHOW GLOBAL VARIABLES\n    v [name]        : SHOW GLOBAL VARIABLES LIKE '%name%'\n    lw(or ll or l+) : Lock waiting list\n    tx (or txNNN)   : Long transaction list (over N seconds)\n    fs              : List all data file size\n    fs [name]       : Data file size\n    ts              : List all tablespace size (index_length + data_length)\n    ts [name]       : Tablespace size (index_length + data_length)", INFO_ERROR, 0);
+    return put_info("Unknown command\n\n>> Usage ::\n   =========================================================\n     u               : SHOW USERs\n     u [name]        : SHOW CREATE USER (name)\n     d               : SHOW DATABASEs\n     d [name]        : SHOW CREATE DATABASE (name)\n     t               : SHOW TABLEs\n     t [name]        : SHOW CREATE TABLE (name)\n     f               : SHOW all FUNCTIONs\n     f [name]        : SHOW CREATE FUNCTION (name)\n     p               : SHOW all PROCEDUREs\n     p [name]        : SHOW CREATE PROCEDURE (name)\n     tg              : SHOW all TRIGGERs\n     tg [name]       : SHOW CREATE TRIGGER (name)\n     ps              : SHOW PROCESSLIST\n     ps+             : SHOW FULL PROCESSLIST\n     rm (or rp)      : SHOW MASTER STATUS\n     rs (or rr)      : SHOW REPLICA STATUS\n     v               : SHOW GLOBAL VARIABLEs\n     v [name]        : SHOW GLOBAL VARIABLEs LIKE '%name%'\n     lw(or ll or l+) : Lock waiting list\n     tx              : Long transaction list (over N seconds)\n     fs              : List all data file size\n     fs [name]       : Data file size\n     ts              : List all tablespace size (index_length + data_length)\n     ts [name]       : Tablespace size (index_length + data_length)\n   =========================================================", INFO_ERROR, 0);
   }
 
   int rtn=0;
