@@ -35,9 +35,47 @@ prompt_color_replica=yellow
 ![Replica prompt 예제](./README.screenshots/prompt-replica.png)
 * 설정 가능 컬러 : `black | red | green | yellow | blue | magenta | cyan | white`
 
-### 단축 명령어
-단축 명령어는 미리 설정된 SQL을 짧은 입력만으로 실행할 수 있도록 해준다.
-단축 명령어는 MySQL client 프롬프트에서 `\\`로 시작하는 1~2글자의 알파벳으로 구성되어 있으며, 단축 명령이 실행한 SQL 문장을 화면에 표시하고, 즉시 실행한다.
+---------------------
+
+### SQL 스크립트 실행
+MySQL client에서 `source` 명령을 사용하면, 파일로 저장된 SQL 문장을 실행할 수 있다. 하지만 `source` 명령은 정적인 SQL 또는 세션 변수만 사용할 수 있는데, 세션 변수는 다음과 같은 단점이 있다.
+* 사용자가 SQL 문장의 세션 변수를 알고 있어야 함
+* 세션 변수의 값을 설정하는 작업은 상대적으로 번거로움
+* SQL 문장의 특정 위치에는 세션 변수 사용 불가함
+
+이런 불편함을 최소화하기 위해서, `\\x script_file_name` 명령으로 파일의 SQL을 실행할 수 있도록 기능을 추가했다. 아래와 같은 SQL을 가진 파일을 생성해두면,
+```
+$ cat ~/.mysqlrc/test.sql
+SELECT '#{STRING_VARIABLE}' as string_var 
+LIMIT #{LIMIT_N_ROWS};
+```
+`\\x` 명령으로 준비된 파일의 SQL을 실행할 수 있다.
+```
+mysql> \\x test
+  > parameter #{STRING_VARIABLE}: test message
+  > parameter #{LIMIT_N_ROWS}: 10
+SELECT 'test message' as string_var 
+LIMIT 10;
++--------------+
+| string_var   |
++--------------+
+| test message |
++--------------+
+```
+`\\x` 명령 사용시
+* SQL이 저장된 스크립트 파일의 확장자는 `.sql` 이어야 함
+* `\\x` 명령 사용시 `.sql`은 생략하고 파일의 이름만 명시해야 함
+* SQL 파일은 아래 2개 디렉토리에 존재해야 함
+ 		1. `MYSQL_SCRIPTDIR` 환경 변수에 설정된 디렉토리
+		2. `~/.mysqlrc/` 기본 디렉토리
+
+디렉토리 설정 주의 사항
+`MYSQL_SCRIPTDIR` 환경 변수가 설정되지 않은 경우에만, `~/.mysqlrc` 디렉토리가 사용됨
+
+---------------------
+
+### 단축 명령어 (MySQL CLI 내장 SQL)
+단축 명령어는 미리 설정된 SQL을 짧은 입력만으로 원하는 SELECT 쿼리를 실행할 수 있도록 해준다. 단축 명령어는 MySQL client 프롬프트에서 `\\`로 시작하는 1~2글자의 알파벳으로 구성되어 있으며, 단축 명령이 실행한 SQL 문장을 화면에 표시하고, (필요한 경우 parameter 입력 후) 즉시 실행한다.
 
 #### 단축 명령어 도움말 보기
 프롬프트에서 `\\` 를 입력하면, 지원되는 단축 명령어를 확인할 수 있다.
@@ -401,6 +439,7 @@ mysql> \\tx
 +-----------+---------------------+---------+---------+-------------------+----------------+------------------+------------------+
 ```
 
+---------------------
 
 ### InnoDB adpative hash index 관련 경고
 InnoDB adaptive hash index가 활성화된 경우, ALTER TABLE의 잠금 시간을 길게 만드는 문제점 있으며, 이에 대한 경고 문구임 (특히 DROP TABLE의 경우)
