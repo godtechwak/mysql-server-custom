@@ -1,0 +1,6 @@
+"btr 디렉터리 구성 파일"
+- btr0btr.cc: B-tree
+- btr0cur.cc: 인덱스 트리 커서
+- btr0load.cc: B-tree 대랑 로드
+- btr0pcur.cc: 인덱스 트리 영구 커서
+- btr0sea.cc: 인덱스 트리 어댑티브 검색
