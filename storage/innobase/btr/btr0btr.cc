@@ -6,6 +6,8 @@ Copyright (c) 2012, Facebook Inc.
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
 Free Software Foundation.
+(이 프로그램은 무료 소프트웨어다. 이 프로그램을 재배포 및/또는 수정할 수 있다.
+자유 소프트웨어 제단에 의한 GNU General Public License 버전 2.0의 조항이다.)
 
 This program is also distributed with certain software (including but not
 limited to OpenSSL) that is licensed under separate terms, as designated in a
@@ -13,15 +15,22 @@ particular file or component or in included license documentation. The authors
 of MySQL hereby grant you an additional permission to link the program and
 your derivative works with the separately licensed software that they have
 included with MySQL.
+(또한 이 프로그램은 특정 파일 또는 구성 요소 또는 포함된 라이센스 설명서에 지정된 대로 
+별도의 조건으로 라이센스가 부여된 특정 소프트웨어(OpenSSL 포함. 단, 이에 국한되지 않음)와 함께 배포된다. 
+따라서 MySQL의 작성자는 프로그램과 파생 저작물을 MySQL에 포함된 별도로 라이센스가 부여된 소프트웨어와 연결할 수 있는 추가 권한을 부여한다.)
 
 This program is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
 FOR A PARTICULAR PURPOSE. See the GNU General Public License, version 2.0,
 for more details.
+(본 프로그램은 유용하지만 어떠한 보증도 없이, 상품성 또는 특정 목적에 대한 적합성에 대한 묵시적인 보증도 없이 배포된다.
+따라서 GNU General Public License 버전 2.0을 참조바란다.)
 
 You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
+(배포하려면 이 프로그램과 함께 GNU General Public License 사본을 받았어야 한다. 
+그렇지 않으면 Free Software Foundation에 편지를 쓰면 된다.)
 
 *****************************************************************************/
 
