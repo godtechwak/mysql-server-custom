@@ -67,11 +67,15 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #ifndef UNIV_HOTBACKUP
 /** Checks if the page in the cursor can be merged with given page.
  If necessary, re-organize the merge_page.
- @return        true if possible to merge. */
+ @return        true if possible to merge. 
+ (커서의 페이지를 지정된 페이지와 병합할 수 있는지 확인한다.
+ 필요한 경우 merge_page를 다시 구성한다.)
+ */
+
 static bool btr_can_merge_with_page(
-    btr_cur_t *cursor,         /*!< in: cursor on the page to merge */
-    page_no_t page_no,         /*!< in: a sibling page */
-    buf_block_t **merge_block, /*!< out: the merge block */
+    btr_cur_t *cursor,         /*!< in: cursor on the page to merge (병합할 페이지의 커서) */
+    page_no_t page_no,         /*!< in: a sibling page (형제 페이지) */
+    buf_block_t **merge_block, /*!< out: the merge block (병합 블럭) */
     mtr_t *mtr);               /*!< in: mini-transaction */
 #endif                         /* !UNIV_HOTBACKUP */
 
