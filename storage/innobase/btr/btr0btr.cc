@@ -91,14 +91,19 @@ void btr_corruption_report(const buf_block_t *block, /*!< in: corrupted block */
 #ifndef UNIV_HOTBACKUP
 /*
 Latching strategy of the InnoDB B-tree
+(InnoDB B-tree의 latch 전략)
 --------------------------------------
 A tree latch protects all non-leaf nodes of the tree. Each node of a tree
 also has a latch of its own.
+(트리 래치는 트리의 모든 비 리프 노드를 보호한다. 트리의 각 노드에는 자체 래치도 있다.)
 
 A B-tree operation normally first acquires an S-latch on the tree. It
 searches down the tree and releases the tree latch when it has the
 leaf node latch. To save CPU time we do not acquire any latch on
 non-leaf nodes of the tree during a search, those pages are only bufferfixed.
+(일반적으로 B-트리 작업은 먼저 트리에서 S-래치를 획득하는 것이다. 
+그리고 트리 아래를 검색하여 리프 노드 래치가 있으면 트리 래치를 해제한다. 
+CPU 시간을 절약하기 위해 검색 중에는 트리의 비리프 노드에서 어떤 래치도 획득하지 않으며, 이러한 페이지는 버퍼 고정일 뿐이다.)
 
 If an operation needs to restructure the tree, it acquires an X-latch on
 the tree before searching to a leaf node. If it needs, for example, to
@@ -108,13 +113,24 @@ split a leaf,
 (3) inserts the appropriate node pointer to the first non-leaf level,
 (4) releases the tree X-latch,
 (5) and then moves records from the leaf to the new allocated page.
+(트리를 재구성해야 하는 작업은 리프 노드를 검색하기 전에 트리에서 X-래치를 획득한다. 
+예를 들어 리프 페이지를 분할 하기 위해서,
+(1) InnoDB는 리프 노드에서 분할점을 결정한다.
+(2) 신규 페이지를 할당한다.
+(3) 첫 번째 비 리프 레벨에 적절한 노드 포인터를 삽입한다.
+(4) X-래치를 해제한다.
+(5) 리프 페이지의 레코드를 새로 할당된 페이지로 옮긴다.
 
 Node pointers
+(노드 포인터)
 -------------
 Leaf pages of a B-tree contain the index records stored in the
 tree. On levels n > 0 we store 'node pointers' to pages on level
 n - 1. For each page there is exactly one node pointer stored:
 thus the our tree is an ordinary B-tree, not a B-link tree.
+(B 트리의 리프 페이지에는 트리에 저장된 인덱스 레코드가 포함된다.
+레벨 n > 0에서 우리는 레벨 n - 1의 페이지에 '노드 포인터'를 저장한다.
+각 페이지마다 정확히 하나의 노드 포인터가 저장된다. 따라서 트리는 B-링크 트리가 아니라 일반적인 B-트리입니다.)
 
 A node pointer contains a prefix P of an index record. The prefix
 is long enough so that it determines an index record uniquely.
@@ -122,6 +138,9 @@ The file page number of the child page is added as the last
 field. To the child page we can store node pointers or index records
 which are >= P in the alphabetical order, but < P1 if there is
 a next node pointer on the level, and P1 is its prefix.
+(노드 포인터에는 인덱스 레코드의 접두사 P가 포함되어 있다. 접두사가 충분히 길어서 인덱스 레코드를 고유하게 결정한다.
+하위 페이지의 파일 페이지 번호가 마지막 필드로 추가된다. 하위 페이지에 >= P인 노드 포인터 또는 인덱스 레코드를 알파벳 순서로 저장할 수 있지만, 
+레벨에 다음 노드 포인터가 있고 P1이 접두사일 경우 < P1이다.)
 
 If a node pointer with a prefix P points to a non-leaf child,
 then the leftmost record in the child must have the same
@@ -129,19 +148,29 @@ prefix P. If it points to a leaf node, the child is not required
 to contain any record with a prefix equal to P. The leaf case
 is decided this way to allow arbitrary deletions in a leaf node
 without touching upper levels of the tree.
+(접두사 P가 있는 노드 포인터가 비 리프 하위 항목을 가리킬 경우, 하위 항목에서 가장 왼쪽에 있는 레코드의 접두사 P가 동일해야 한다. 
+리프 노드를 가리킬 경우, 자식은 P와 같은 접두사를 가진 레코드를 포함할 필요가 없다.
+리프 케이스는 트리의 상위 레벨을 건드리지 않고 리프 노드에서 임의 삭제를 허용하는 방식으로 결정된다.)
 
 We have predefined a special minimum record which we
 define as the smallest record in any alphabetical order.
 A minimum record is denoted by setting a bit in the record
 header. A minimum record acts as the prefix of a node pointer
 which points to a leftmost node on any level of the tree.
+(사전 정의된 특수 최소 레코드는 알파벳 순서에서 가장 작은 레코드로 정의된다.
+최소 레코드는 레코드 헤더에 비트를 설정하여 나타낸다.
+최소 레코드는 트리의 모든 수준에서 가장 왼쪽 노드를 가리키는 노드 포인터의 접두사로 작동한다.)
 
 File page allocation
+(파일 페이지 할당)
 --------------------
 In the root node of a B-tree there are two file segment headers.
 The leaf pages of a tree are allocated from one file segment, to
 make them consecutive on disk if possible. From the other file segment
 we allocate pages for the non-leaf levels of the tree.
+(B 트리의 루트 노드에는 두 개의 파일 세그먼트 헤더가 있다.
+트리의 리프 페이지는 가능한 경우 디스크에서 연속적으로 만들기 위해 하나의 파일 세그먼트에서 할당된다. 
+다른 파일 세그먼트에서 트리의 비리프 레벨에 대한 페이지를 할당한다.)
 */
 
 #ifdef UNIV_BTR_DEBUG
