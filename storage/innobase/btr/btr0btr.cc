@@ -175,6 +175,7 @@ we allocate pages for the non-leaf levels of the tree.
 
 #ifdef UNIV_BTR_DEBUG
 /** Checks a file segment header within a B-tree root page.
+(B 트리 루트 페이지 내의 파일 세그먼트 헤더를 확인한다.)
  @return true if valid */
 static bool btr_root_fseg_validate(
     const fseg_header_t *seg_header, /*!< in: segment header */
@@ -190,6 +191,7 @@ static bool btr_root_fseg_validate(
 #endif /* UNIV_BTR_DEBUG */
 
 /** Gets the root node of a tree and x- or s-latches it.
+(트리의 루트 노드를 가져오고 x 또는 s-래치한다.)
  @return root page, x- or s-latched */
 buf_block_t *btr_root_block_get(
     const dict_index_t *index, /*!< in: index tree */
@@ -220,19 +222,25 @@ buf_block_t *btr_root_block_get(
 }
 
 /** Gets the root node of a tree and sx-latches it for segment access.
+(트리의 루트 노드를 가져오고 세그먼트 액세스를 위해 sx-latch한다.)
  @return root page, sx-latched */
 page_t *btr_root_get(const dict_index_t *index, /*!< in: index tree */
                      mtr_t *mtr)                /*!< in: mtr */
 {
   /* Intended to be used for segment list access.
   SX lock doesn't block reading user data by other threads.
-  And block the segment list access by others.*/
+  And block the segment list access by others.
+  (세그먼트 목록 액세스에 사용된다.
+  SX 잠금은 다른 스레드의 사용자 데이터 읽기를 차단하지 않는다.
+  그리고 다른 사용자의 세그먼트 목록 액세스를 차단한다.)
+  */
   return (buf_block_get_frame(btr_root_block_get(index, RW_SX_LATCH, mtr)));
 }
 
 /** Gets the height of the B-tree (the level of the root, when the leaf
  level is assumed to be 0). The caller must hold an S or X latch on
  the index.
+ (B-트리의 높이(리프 수준이 0으로 가정될 때의 루트 수준)를 가져온다. 호출자는 인덱스의 S 또는 X 래치를 잡아야 한다.)
  @return tree height (level of the root) */
 ulint btr_height_get(dict_index_t *index, /*!< in: index tree */
                      mtr_t *mtr)          /*!< in/out: mini-transaction */
@@ -246,12 +254,16 @@ ulint btr_height_get(dict_index_t *index, /*!< in: index tree */
             MTR_MEMO_S_LOCK | MTR_MEMO_X_LOCK | MTR_MEMO_SX_LOCK) ||
         index->table->is_intrinsic());
 
-  /* S latches the page */
+  /* S latches the page 
+  (페이지를 S 래치한다.)
+  */
   root_block = btr_root_block_get(index, RW_S_LATCH, mtr);
 
   height = btr_page_get_level(buf_block_get_frame(root_block));
 
-  /* Release the S latch on the root page. */
+  /* Release the S latch on the root page. 
+  (루트 페이지의 S 래치를 해제한다.)
+  */
   mtr->memo_release(root_block, MTR_MEMO_PAGE_S_FIX);
 
   ut_d(sync_check_unlock(&root_block->lock));
@@ -261,6 +273,7 @@ ulint btr_height_get(dict_index_t *index, /*!< in: index tree */
 
 /** Checks a file segment header within a B-tree root page and updates
  the segment header space id.
+ (B 트리 루트 페이지 내의 파일 세그먼트 헤더를 확인하고 세그먼트 헤더 공간 ID를 업데이트 한다.)
  @return true if valid */
 static bool btr_root_fseg_adjust_on_import(
     fseg_header_t *seg_header, /*!< in/out: segment header */
@@ -285,6 +298,7 @@ static bool btr_root_fseg_adjust_on_import(
 }
 
 /** Checks and adjusts the root node of a tree during IMPORT TABLESPACE.
+(IMPORT TABLESPACE동안 트리의 루트 노드를 확인하고 조정한다.)
  @return error code, or DB_SUCCESS */
 dberr_t btr_root_adjust_on_import(
     const dict_index_t *index) /*!< in: index tree */
