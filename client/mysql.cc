@@ -36,6 +36,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 #include <stdlib.h>
 #include <sys/types.h>
 #include <time.h>
+#include <string> //by silver
 
 #include "client/client_priv.h"
 #include "client/client_query_attributes.h"
@@ -187,8 +188,10 @@ static char *current_prompt = nullptr;
 static char *delimiter_str = nullptr;
 static char *opt_init_command = nullptr;
 static const char *default_charset = MYSQL_AUTODETECT_CHARSET_NAME;
+#ifdef HAVE_READLINE
 static char *histfile;
 static char *histfile_tmp;
+#endif
 static char *opt_histignore = nullptr;
 static String glob_buffer, old_buffer;
 static String processed_prompt;
@@ -315,6 +318,7 @@ static int com_quit(String *str, char *), com_go(String *str, char *),
     com_warnings(String *str, char *), com_nowarnings(String *str, char *),
     com_resetconnection(String *str, char *),
     com_query_attributes(String *str, char *),
+    com_extra(String *str, char *), //by silver
     com_ssl_session_data_print(String *str, char *);
 static int com_shell(String *str, char *);
 
@@ -367,6 +371,7 @@ typedef struct {
 
 static COMMANDS commands[] = {
     {"?", '?', com_help, true, "Synonym for `help'."},
+    {"\\", '\\', com_extra, true, "Extra short-cut command,"}, //by silver
     {"clear", 'c', com_clear, false, "Clear the current input statement."},
     {"connect", 'r', com_connect, true,
      "Reconnect to the server. Optional arguments are db and host."},
@@ -1452,8 +1457,8 @@ int main(int argc, char *argv[]) {
 void mysql_end(int sig) {
 #ifndef _WIN32
   /*
-    Ingnoring SIGQUIT, SIGINT and SIGHUP signals when cleanup process starts.
-    This will help in resolving the double free issues, which occures in case
+    Ignoring SIGQUIT, SIGINT and SIGHUP signals when cleanup process starts.
+    This will help in resolving the double free issues, which occurs in case
     the signal handler function is started in between the clean up function.
   */
   signal(SIGQUIT, SIG_IGN);
@@ -1547,7 +1552,7 @@ void handle_ctrlc_signal(int) {
   @param sig              Signal number
 */
 
-void handle_quit_signal(int sig) {
+void handle_quit_signal(int sig [[maybe_unused]]) {
   const char *reason = "Terminal close";
 
   if (!executing_query) {
@@ -3026,7 +3031,7 @@ static int reconnect(void) {
   if (opt_reconnect) {
     put_info("No connection. Trying to reconnect...", INFO_INFO);
     (void)com_connect((String *)nullptr, nullptr);
-    if (opt_rehash) com_rehash(nullptr, nullptr);
+    if (opt_rehash && connected) com_rehash(nullptr, nullptr);
   }
   if (!connected) return put_info("Can't connect to the server\n", INFO_ERROR);
   /* purecov: end */
@@ -4016,7 +4021,7 @@ static int com_pager(String *buffer [[maybe_unused]],
   if (!param || !strlen(param))  // if pager was not given, use the default
   {
     if (!default_pager_set) {
-      tee_fprintf(stdout, "Default pager wasn't set, using stdout.\n");
+      tee_fprintf(stdout, "파라미터를 빼먹었잖아!!!\n");
       opt_nopager = true;
       my_stpcpy(pager, "stdout");
       PAGER = stdout;
@@ -4350,7 +4355,7 @@ static int com_use(String *buffer [[maybe_unused]], char *line) {
 static int normalize_dbname(const char *line, char *buff, uint buff_size) {
   MYSQL_RES *res = nullptr;
 
-  /* Send the "USE db" commmand to the server. */
+  /* Send the "USE db" command to the server. */
   if (mysql_query(&mysql, line)) return 1;
 
   /*
@@ -4638,7 +4643,7 @@ static int sql_real_connect(char *host, char *database, char *user, char *,
     /*
       Don't convert trailing '\n' character - it was appended during
       last batch_readline_command() call.
-      Oherwise we'll get an extra line, which makes some tests fail.
+      Otherwise we'll get an extra line, which makes some tests fail.
     */
     if (status.line_buff->buffer[len - 1] == '\n') len--;
     if (tmp.copy(status.line_buff->buffer, len, &my_charset_utf8mb4_bin,
@@ -4649,8 +4654,7 @@ static int sql_real_connect(char *host, char *database, char *user, char *,
     batch_readline_end(status.line_buff);
 
     /* Re-initialize line buffer from the converted string */
-    if (!(status.line_buff =
-              batch_readline_command(NULL, (char *)tmp.c_ptr_safe())))
+    if (!(status.line_buff = batch_readline_command(nullptr, tmp.c_ptr_safe())))
       return 1;
   }
   execute_buffer_conversion_done = true;
@@ -4813,7 +4817,7 @@ static int com_status(String *buffer [[maybe_unused]],
   tee_fprintf(stdout, "\nConnection id:\t\t%lu\n", mysql_thread_id(&mysql));
   /*
     Don't remove "limit 1",
-    it is protection againts SQL_SELECT_LIMIT=0
+    it is protection against SQL_SELECT_LIMIT=0
   */
   if (!mysql_store_result_for_lazy(&result)) {
     MYSQL_ROW cur = mysql_fetch_row(result);
@@ -5426,4 +5430,150 @@ static int com_resetconnection(String *buffer [[maybe_unused]],
     return put_error(&mysql);
   }
   return error;
+}
+
+//by silver
+#ifndef MAX_SUBCOMMAND_LEN
+#define MAX_SUBCOMMAND_LEN 3
+#endif
+static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
+  
+  char user_command[MAX_SUBCOMMAND_LEN]="";
+  char object_name[FN_REFLEN] = "";
+  char *end; 
+  char *param;
+  
+  // 명령어 정의
+  user_command[0] = line[2];
+  user_command[1] = line[3];
+  user_command[2] = line[4];
+  
+  while (my_isspace(charset_info, *line)) line++; 
+  if (!(param = strchr(line, ' '))){
+  }else{ 
+    while (my_isspace(charset_info, *param)) param++;
+    end = strmake(object_name, param, sizeof(object_name) - 1);
+    if (end > object_name){
+    }
+    while (end > object_name && (my_isspace(charset_info, end[-1]) ||
+                                 my_iscntrl(charset_info, end[-1])))
+    end--;
+    end[0] = 0;
+  }
+  
+  // Save old vertical mode
+  bool oldvertical = vertical;
+
+  // Run command
+  if(user_command[0]=='t' && user_command[1]=='c'){
+      vertical = true;
+      glob_buffer.append( STRING_WITH_LEN("  SHOW CREATE TABLE ") );
+      glob_buffer.append( object_name, strlen(object_name) );
+      glob_buffer.append( STRING_WITH_LEN(";") );
+  }
+  else if(user_command[0]=='t' && user_command[1]=='s'){
+      vertical = true;
+      glob_buffer.append( STRING_WITH_LEN("  SHOW TABLE STATUS LIKE '") );
+      glob_buffer.append( object_name, strlen(object_name) );
+      glob_buffer.append( STRING_WITH_LEN("';") );
+  }
+  else if(user_command[0]=='t' && user_command[1]=='t'){
+      glob_buffer.append( STRING_WITH_LEN("  SHOW TABLES LIKE '%") );
+      glob_buffer.append( object_name, strlen(object_name) );
+      glob_buffer.append( STRING_WITH_LEN("%';") );
+  }
+  else if(user_command[0]=='d' && user_command[1]=='c'){
+      glob_buffer.append( STRING_WITH_LEN("  SHOW CREATE DATABASE ") );
+      glob_buffer.append( object_name, strlen(object_name) );
+      glob_buffer.append( STRING_WITH_LEN(";") );
+  }
+  else if(user_command[0]=='d' && user_command[1]=='d' && user_command[2]==0){
+      glob_buffer.append( STRING_WITH_LEN("  SELECT row_number()over(order by schema_name) AS number, schema_name FROM INFORMATION_SCHEMA.SCHEMATA WHERE schema_name NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys');") );
+  }
+  else if(user_command[0]=='d' && user_command[1]=='d' && user_command[2]!=0){
+      printf("silver\n");
+      printf("%s\n", get_current_db());
+	  /*
+    	  char *tmp; 
+      char buff[FN_REFLEN] = "";
+      int select_db;
+      uint warnings;
+      
+      memset(buff, 0, sizeof(buff));
+
+      strmake(buff, line, sizeof(buff) - 1);
+      tmp = get_arg(buff, false);
+      
+      if (get_current_db()) connected = false;
+
+      if (!current_db || cmp_database(charset_info, current_db, tmp)) {
+        if (one_database) {
+          skip_updates = true;
+          select_db = 0;  // don't do mysql_select_db()
+        } else
+          select_db = 2;  // do mysql_select_db() and build_completion_hash()
+      } else {
+        
+	skip_updates = false;
+        select_db = 1;  // do only mysql_select_db(), without completion
+      }
+
+      if (select_db) {
+        if (!connected && reconnect())
+          return opt_reconnect ? -1 : 1;  // Fatal error
+        if (mysql_select_db(&mysql, tmp)) {
+          if (mysql_errno(&mysql) != CR_SERVER_GONE_ERROR) return put_error(&mysql);
+          if (reconnect()) return opt_reconnect ? -1 : 1;  // Fatal error
+          if (mysql_select_db(&mysql, tmp)) return put_error(&mysql);
+        }
+    my_free(current_db);
+    printf("%s", tmp);
+    current_db = my_strdup(PSI_NOT_INSTRUMENTED, tmp, MYF(MY_WME));
+
+#ifdef HAVE_READLINE
+    if (select_db > 1) build_completion_hash(opt_rehash, true);
+#endif
+  }
+
+  if (0 < (warnings = mysql_warning_count(&mysql))) {
+    snprintf(buff, sizeof(buff), "Database changed, %u warning%s", warnings,
+             warnings > 1 ? "s" : "");
+    put_info(buff, INFO_INFO);
+    if (show_warnings == 1) print_warnings();
+  } else
+    put_info("Database changed", INFO_INFO);
+  return 0;
+      //glob_buffer.append( STRING_WITH_LEN("  SELECT 999;") );
+  }
+
+*/
+  }
+  else if(user_command[0]=='p' && user_command[1]=='s'){
+      glob_buffer.append( STRING_WITH_LEN("  SHOW PROCESSLIST;"));
+  }
+  else if(user_command[0]=='u' && user_command[1]=='u'){
+      glob_buffer.append( STRING_WITH_LEN("  SELECT user,host FROM mysql.user;"));
+  }
+  else if(user_command[0]=='v' && user_command[1]=='v'){
+      glob_buffer.append( STRING_WITH_LEN("  SHOW GLOBAL VARIABLES LIKE '%") );
+      glob_buffer.append( object_name, strlen(object_name) );
+      glob_buffer.append( STRING_WITH_LEN("%';") );
+  }
+  else if(user_command[0]=='s' && user_command[1]=='s'){
+      glob_buffer.append( STRING_WITH_LEN("  SHOW SESSION STATUS LIKE '%") );
+      glob_buffer.append( object_name, strlen(object_name) );
+      glob_buffer.append( STRING_WITH_LEN("%';") );
+  }
+  else{
+    return put_info("Unknown command\n\n>> Usage ::\n   =========================================================\n     USER (name)\n     dd             : SHOW DATABASEs\n     dc             : SHOW CREATE DATABASE (name)\n     tt             : SHOW TABLEs\n     tc             : SHOW CREATE TABLE (name)\n     ps             : SHOW PROCESSLIST\n     uu             : SHOW USER & HOST\n     \n   =========================================================", INFO_ERROR, 0);
+  }
+
+  int rtn=0;
+  if(glob_buffer.length()>0){
+    //put_info(glob_buffer.ptr(), INFO_INFO); //수행된 명령을 출력할지 여부
+    rtn = com_go(&glob_buffer, nullptr);
+  }
+
+  vertical = oldvertical;
+  return rtn;
 }
