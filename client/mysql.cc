@@ -2424,6 +2424,7 @@ static COMMANDS *find_command(char *name) {
       All commands are in the first part of commands array and have a function
       to implement it.
     */
+
     for (uint i = 0; commands[i].func; i++) {
       if (!my_strnncoll(&my_charset_latin1, (uchar *)name, len,
                         pointer_cast<const uchar *>(commands[i].name), len) &&
@@ -3335,22 +3336,28 @@ static int com_go(String *buffer, char *line [[maybe_unused]]) {
     char *pos;
     bool batchmode = (status.batch && verbose <= 1);
     buff[0] = 0;
-
+     
+    //일반적인 경우 else로 처리되며, 오류는 발생하지 않는다. by silver
     if (quick) {
       if (!(result = mysql_use_result(&mysql)) && mysql_field_count(&mysql)) {
-        error = put_error(&mysql);
+	error = put_error(&mysql);
         goto end;
       }
     } else {
       error = mysql_store_result_for_lazy(&result);
-      if (error) goto end;
+      if (error) {
+        goto end;
+      }
     }
-
-    if (verbose >= 3 || !opt_silent)
+    
+    // verbose가 3보다 큰 조건과 opt_silient가 아닌 조건으로 들어간다. by silver
+    if (verbose >= 3 || !opt_silent) {
       mysql_end_timer(timer, time_buff);
+    }
     else
       time_buff[0] = '\0';
 
+    // if문으로 들어가서 by silver
     /* Every branch must truncate  buff . */
     if (result) {
       if (!mysql_num_rows(result) && !quick && !column_types_flag) {
@@ -3365,19 +3372,28 @@ static int com_go(String *buffer, char *line [[maybe_unused]]) {
           print_table_data_xml(result);
           end_pager();
         }
-      } else {
+      } else { //else로 들어온다. by silver
         init_pager();
-        if (opt_html)
+        if (opt_html) {
+          printf("This is opt_html");
           print_table_data_html(result);
-        else if (opt_xml)
+	}
+        else if (opt_xml) {
+          printf("This is opt_xml");
           print_table_data_xml(result);
+	}
         else if (vertical || (auto_vertical_output &&
-                              (terminal_width < get_result_width(result))))
-          print_table_data_vertically(result);
-        else if (opt_silent && verbose <= 2 && !output_tables)
-          print_tab_data(result);
-        else
-          print_table_data(result);
+                              (terminal_width < get_result_width(result)))) {
+          printf("This is vertical");
+	  print_table_data_vertically(result);
+	}
+        else if (opt_silent && verbose <= 2 && !output_tables) {
+          printf("This is opt_silent");
+	  print_tab_data(result);
+	}
+        else { //else로 값이 들어온다. by silver
+	  print_table_data(result);
+	}
         if (!batchmode)
           sprintf(buff, "%" PRId64 " %s in set", mysql_num_rows(result),
                   mysql_num_rows(result) == 1LL ? "row" : "rows");
@@ -3410,6 +3426,7 @@ static int com_go(String *buffer, char *line [[maybe_unused]]) {
       fflush(stdout);
     mysql_free_result(result);
   } while (!(err = mysql_next_result(&mysql)));
+  //} while ((1 == 1));
   if (err >= 1) error = put_error(&mysql);
 
 end:
@@ -5491,62 +5508,41 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
       glob_buffer.append( STRING_WITH_LEN("  SELECT row_number()over(order by schema_name) AS number, schema_name FROM INFORMATION_SCHEMA.SCHEMATA WHERE schema_name NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys');") );
   }
   else if(user_command[0]=='d' && user_command[1]=='d' && user_command[2]!=0){
-      printf("silver\n");
-      printf("%s\n", get_current_db());
-	  /*
-    	  char *tmp; 
-      char buff[FN_REFLEN] = "";
-      int select_db;
-      uint warnings;
-      
-      memset(buff, 0, sizeof(buff));
+      int num_fields;
+      MYSQL_RES *result;
+      //MYSQL_FIELD *field;
+      MYSQL_ROW row;
+      char cmd1[]="SELECT A.schema_name FROM (SELECT row_number()over(order by schema_name) AS number, schema_name FROM INFORMATION_SCHEMA.SCHEMATA WHERE schema_name NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')) AS A WHERE A.number = ";
+      char cmd2[10]="";
+      char chosen_database[100]="";
 
-      strmake(buff, line, sizeof(buff) - 1);
-      tmp = get_arg(buff, false);
-      
-      if (get_current_db()) connected = false;
+      sprintf(cmd2, "%c%s", user_command[2], ";");
+      strcat(cmd1, cmd2);
 
-      if (!current_db || cmp_database(charset_info, current_db, tmp)) {
-        if (one_database) {
-          skip_updates = true;
-          select_db = 0;  // don't do mysql_select_db()
-        } else
-          select_db = 2;  // do mysql_select_db() and build_completion_hash()
-      } else {
-        
-	skip_updates = false;
-        select_db = 1;  // do only mysql_select_db(), without completion
+      mysql_query(&mysql, cmd1);
+      result = mysql_use_result(&mysql);
+      num_fields = mysql_field_count(&mysql);
+
+      while((row = mysql_fetch_row(result)) != NULL)
+      {
+          for(int i = 0; i < num_fields; i++)
+          {
+              //field = mysql_fetch_field_direct(result, i);
+              //printf("%s: %s, ", field->name, row[i]);
+              strcat(chosen_database, row[i]);
+              if (strlen(chosen_database) != 0){
+                  break;
+              }
+          }
+
+          printf("\n");
       }
 
-      if (select_db) {
-        if (!connected && reconnect())
-          return opt_reconnect ? -1 : 1;  // Fatal error
-        if (mysql_select_db(&mysql, tmp)) {
-          if (mysql_errno(&mysql) != CR_SERVER_GONE_ERROR) return put_error(&mysql);
-          if (reconnect()) return opt_reconnect ? -1 : 1;  // Fatal error
-          if (mysql_select_db(&mysql, tmp)) return put_error(&mysql);
-        }
-    my_free(current_db);
-    printf("%s", tmp);
-    current_db = my_strdup(PSI_NOT_INSTRUMENTED, tmp, MYF(MY_WME));
+      glob_buffer.append( STRING_WITH_LEN("  USE ") );
+      glob_buffer.append( chosen_database, strlen(chosen_database) );
 
-#ifdef HAVE_READLINE
-    if (select_db > 1) build_completion_hash(opt_rehash, true);
-#endif
-  }
+      mysql_free_result(result);
 
-  if (0 < (warnings = mysql_warning_count(&mysql))) {
-    snprintf(buff, sizeof(buff), "Database changed, %u warning%s", warnings,
-             warnings > 1 ? "s" : "");
-    put_info(buff, INFO_INFO);
-    if (show_warnings == 1) print_warnings();
-  } else
-    put_info("Database changed", INFO_INFO);
-  return 0;
-      //glob_buffer.append( STRING_WITH_LEN("  SELECT 999;") );
-  }
-
-*/
   }
   else if(user_command[0]=='p' && user_command[1]=='s'){
       glob_buffer.append( STRING_WITH_LEN("  SHOW PROCESSLIST;"));
@@ -5567,8 +5563,8 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
   else{
     return put_info("Unknown command\n\n>> Usage ::\n   =========================================================\n     USER (name)\n     dd             : SHOW DATABASEs\n     dc             : SHOW CREATE DATABASE (name)\n     tt             : SHOW TABLEs\n     tc             : SHOW CREATE TABLE (name)\n     ps             : SHOW PROCESSLIST\n     uu             : SHOW USER & HOST\n     \n   =========================================================", INFO_ERROR, 0);
   }
-
   int rtn=0;
+
   if(glob_buffer.length()>0){
     //put_info(glob_buffer.ptr(), INFO_INFO); //수행된 명령을 출력할지 여부
     rtn = com_go(&glob_buffer, nullptr);
