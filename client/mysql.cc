@@ -36,7 +36,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 #include <stdlib.h>
 #include <sys/types.h>
 #include <time.h>
-#include <string> //by silver
 
 #include "client/client_priv.h"
 #include "client/client_query_attributes.h"
@@ -3336,8 +3335,7 @@ static int com_go(String *buffer, char *line [[maybe_unused]]) {
     char *pos;
     bool batchmode = (status.batch && verbose <= 1);
     buff[0] = 0;
-     
-    //일반적인 경우 else로 처리되며, 오류는 발생하지 않는다. by silver
+
     if (quick) {
       if (!(result = mysql_use_result(&mysql)) && mysql_field_count(&mysql)) {
 	error = put_error(&mysql);
@@ -3349,15 +3347,13 @@ static int com_go(String *buffer, char *line [[maybe_unused]]) {
         goto end;
       }
     }
-    
-    // verbose가 3보다 큰 조건과 opt_silient가 아닌 조건으로 들어간다. by silver
+
     if (verbose >= 3 || !opt_silent) {
       mysql_end_timer(timer, time_buff);
     }
     else
       time_buff[0] = '\0';
 
-    // if문으로 들어가서 by silver
     /* Every branch must truncate  buff . */
     if (result) {
       if (!mysql_num_rows(result) && !quick && !column_types_flag) {
@@ -3372,7 +3368,7 @@ static int com_go(String *buffer, char *line [[maybe_unused]]) {
           print_table_data_xml(result);
           end_pager();
         }
-      } else { //else로 들어온다. by silver
+      } else {
         init_pager();
         if (opt_html) {
           printf("This is opt_html");
@@ -3391,7 +3387,7 @@ static int com_go(String *buffer, char *line [[maybe_unused]]) {
           printf("This is opt_silent");
 	  print_tab_data(result);
 	}
-        else { //else로 값이 들어온다. by silver
+        else {
 	  print_table_data(result);
 	}
         if (!batchmode)
@@ -5478,7 +5474,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
     end[0] = 0;
   }
   
-  // Save old vertical mode
+  // Save old vertical mode(true일 경우 세로 출력 가능)
   bool oldvertical = vertical;
 
   // Run command
@@ -5509,14 +5505,13 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
   }
   else if(user_command[0]=='d' && user_command[1]=='d' && user_command[2]!=0){
       int num_fields;
-      MYSQL_RES *result;
+      MYSQL_RES *result=nullptr;
       //MYSQL_FIELD *field;
       MYSQL_ROW row;
       char cmd1[]="SELECT A.schema_name FROM (SELECT row_number()over(order by schema_name) AS number, schema_name FROM INFORMATION_SCHEMA.SCHEMATA WHERE schema_name NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')) AS A WHERE A.number = ";
-      char cmd2[10]="";
+      char cmd2[2]={user_command[2], ';'}; //{데이터베이스, 세미콜론}
       char chosen_database[100]="";
 
-      sprintf(cmd2, "%c%s", user_command[2], ";");
       strcat(cmd1, cmd2);
 
       mysql_query(&mysql, cmd1);
@@ -5534,14 +5529,14 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
                   break;
               }
           }
-
           printf("\n");
       }
+      mysql_free_result(result);
+
+      current_db = my_strdup(PSI_NOT_INSTRUMENTED, chosen_database, MYF(MY_WME)); // 프롬프트에 Database 표시
 
       glob_buffer.append( STRING_WITH_LEN("  USE ") );
       glob_buffer.append( chosen_database, strlen(chosen_database) );
-
-      mysql_free_result(result);
 
   }
   else if(user_command[0]=='p' && user_command[1]=='s'){
@@ -5571,5 +5566,6 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
   }
 
   vertical = oldvertical;
+
   return rtn;
 }
