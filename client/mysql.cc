@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2000, 2021, Oracle and/or its affiliates.
+Copyright (c) 2000, 2022, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -36,9 +36,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 #include <stdlib.h>
 #include <sys/types.h>
 #include <time.h>
-#include <fstream>
-#include <iostream>
-#include <cstdio>
 
 #include "client/client_priv.h"
 #include "client/client_query_attributes.h"
@@ -190,8 +187,10 @@ static char *current_prompt = nullptr;
 static char *delimiter_str = nullptr;
 static char *opt_init_command = nullptr;
 static const char *default_charset = MYSQL_AUTODETECT_CHARSET_NAME;
+#ifdef HAVE_READLINE
 static char *histfile;
 static char *histfile_tmp;
+#endif
 static char *opt_histignore = nullptr;
 static String glob_buffer, old_buffer;
 static String processed_prompt;
@@ -240,6 +239,7 @@ static char *opt_oci_config_file = nullptr;
 #include "sslopt-vars.h"
 
 const char *default_dbug_option = "d:t:o,/tmp/mysql.trace";
+static void *ssl_session_data = nullptr;
 
 /*
   completion_hash is an auxiliary feature for mysql client to complete
@@ -287,22 +287,6 @@ static inline bool my_win_is_console_cached(FILE *file) {
 }
 #endif /* _WIN32 */
 
-/* extra script directory */
-static char *script_dir = nullptr;
-/* aurora version (nullptr if not a aurora) */
-static char *remote_aurora_version = nullptr;
-/* real hostname when using proxy */
-static char *remote_real_hostname = nullptr;
-/* real replication role */
-static char *remote_real_replrole = nullptr;
-/* prompt color */
-static char *current_prompt_color_primary = nullptr;
-static char *current_prompt_color_primary_code = nullptr;
-static char *current_prompt_color_replica = nullptr;
-static char *current_prompt_color_replica_code = nullptr;
-/* reset prompt color */
-#define RESET_PROMPT_COLOR_CODE "\001\e[0m\002 "
-
 /* Various printing flags */
 #define MY_PRINT_ESC_0 1 /* Replace 0x00 bytes to "\0"              */
 #define MY_PRINT_SPS_0 2 /* Replace 0x00 bytes to space             */
@@ -331,8 +315,10 @@ static int com_quit(String *str, char *), com_go(String *str, char *),
     com_notee(String *str, char *), com_charset(String *str, char *),
     com_prompt(String *str, char *), com_delimiter(String *str, char *),
     com_warnings(String *str, char *), com_nowarnings(String *str, char *),
-    com_resetconnection(String *str, char *), com_extra(String *str, char *),
-    com_query_attributes(String *str, char *);
+    com_resetconnection(String *str, char *),
+    com_query_attributes(String *str, char *),
+    com_extra(String *str, char *), //by silver
+    com_ssl_session_data_print(String *str, char *);
 static int com_shell(String *str, char *);
 
 #ifdef USE_POPEN
@@ -347,6 +333,7 @@ static const char *server_version_string(MYSQL *mysql);
 static int put_info(const char *str, INFO_TYPE info, uint error = 0,
                     const char *sql_state = nullptr);
 static int put_error(MYSQL *mysql);
+static void put_error_if_any(MYSQL *mysql);
 static void safe_put_field(const char *pos, ulong length);
 static void xmlencode_print(const char *src, uint length);
 static void init_pager();
@@ -383,7 +370,7 @@ typedef struct {
 
 static COMMANDS commands[] = {
     {"?", '?', com_help, true, "Synonym for `help'."},
-    {"\\", '\\', com_extra, true, "Extra short-cut command."},
+    {"\\", '\\', com_extra, true, "Extra short-cut command,"}, //by silver
     {"clear", 'c', com_clear, false, "Clear the current input statement."},
     {"connect", 'r', com_connect, true,
      "Reconnect to the server. Optional arguments are db and host."},
@@ -429,6 +416,8 @@ static COMMANDS commands[] = {
     {"query_attributes", 0, com_query_attributes, true,
      "Sets string parameters (name1 value1 name2 value2 ...) for the next "
      "query to pick up."},
+    {"ssl_session_data_print", 0, com_ssl_session_data_print, true,
+     "Serializes the current SSL session data to stdout or file"},
     /* Get bash-like expansion for some commands */
     {"create table", 0, nullptr, false, ""},
     {"create database", 0, nullptr, false, ""},
@@ -1206,12 +1195,6 @@ extern "C" void handle_quit_signal(int sig);
 static void window_resize(int);
 #endif
 
-char* convert_color_name_to_code(char* color_name);
-void warning_innodb_adaptive_hash_index();
-void resolve_aurora_version();
-void resolve_mysql_info_by_port(int current_port);
-void resolve_aurora_info();
-
 const char DELIMITER_NAME[] = "delimiter";
 const uint DELIMITER_NAME_LEN = sizeof(DELIMITER_NAME) - 1;
 inline bool is_delimiter_command(char *name, ulong len) {
@@ -1281,15 +1264,6 @@ int main(int argc, char *argv[]) {
       getenv("MYSQL_PS1") ? getenv("MYSQL_PS1") : "mysql> ", MYF(MY_WME));
   current_prompt = my_strdup(PSI_NOT_INSTRUMENTED, default_prompt, MYF(MY_WME));
   prompt_counter = 0;
-
-  /* prepare extra script directory */
-  if(getenv("MYSQL_SCRIPTDIR")){
-    script_dir = my_strdup(PSI_NOT_INSTRUMENTED, getenv("MYSQL_SCRIPTDIR"), MYF(MY_WME));
-  }else if(getenv("HOME")){
-    char temp_path[512+1];
-    snprintf(temp_path, 512, "%s/%s", getenv("HOME"), ".mysqlrc");
-    script_dir = my_strdup(PSI_NOT_INSTRUMENTED, temp_path, MYF(MY_WME));
-  }
 
   outfile[0] = 0;              // no (default) outfile
   my_stpcpy(pager, "stdout");  // the default, if --pager wasn't given
@@ -1389,14 +1363,6 @@ int main(int argc, char *argv[]) {
   window_resize(0);
 #endif
 
-  /* initialize prompt color */
-  if(current_prompt_color_primary!=nullptr){
-    current_prompt_color_primary_code = convert_color_name_to_code(current_prompt_color_primary);
-  }
-  if(current_prompt_color_replica!=nullptr){
-    current_prompt_color_replica_code = convert_color_name_to_code(current_prompt_color_replica);
-  }
-
   put_info("Welcome to the MySQL monitor.  Commands end with ; or \\g.",
            INFO_INFO);
   snprintf(glob_buffer.ptr(), glob_buffer.alloced_length(),
@@ -1463,9 +1429,6 @@ int main(int argc, char *argv[]) {
 #endif
   }
 
-  /* check innodb adaptive hash index warning */
-  warning_innodb_adaptive_hash_index();
-
   sprintf(
       buff, "%s",
       "Type 'help;' or '\\h' for help. Type '\\c' to clear the current input "
@@ -1493,8 +1456,8 @@ int main(int argc, char *argv[]) {
 void mysql_end(int sig) {
 #ifndef _WIN32
   /*
-    Ingnoring SIGQUIT, SIGINT and SIGHUP signals when cleanup process starts.
-    This will help in resolving the double free issues, which occures in case
+    Ignoring SIGQUIT, SIGINT and SIGHUP signals when cleanup process starts.
+    This will help in resolving the double free issues, which occurs in case
     the signal handler function is started in between the clean up function.
   */
   signal(SIGQUIT, SIG_IGN);
@@ -1502,6 +1465,7 @@ void mysql_end(int sig) {
   signal(SIGHUP, SIG_IGN);
 #endif
 
+  if (ssl_session_data) mysql_free_ssl_session_data(&mysql, ssl_session_data);
   mysql_close(&mysql);
 #ifdef HAVE_READLINE
   if (!status.batch && !quick && histfile && histfile[0]) {
@@ -1542,14 +1506,6 @@ void mysql_end(int sig) {
   my_free(shared_memory_base_name);
 #endif
   my_free(current_prompt);
-  if(script_dir!=nullptr) my_free(script_dir);
-  if(remote_aurora_version!=nullptr) my_free(remote_aurora_version);
-  if(remote_real_hostname!=nullptr) my_free(remote_real_hostname);
-  if(remote_real_replrole!=nullptr) my_free(remote_real_replrole);
-  if(current_prompt_color_primary!=nullptr) my_free(current_prompt_color_primary);
-  if(current_prompt_color_primary_code!=nullptr) my_free(current_prompt_color_primary_code);
-  if(current_prompt_color_replica!=nullptr) my_free(current_prompt_color_replica);
-  if(current_prompt_color_replica_code!=nullptr) my_free(current_prompt_color_replica_code);
   mysql_server_end();
   my_end(my_end_arg);
   if (global_attrs != nullptr) {
@@ -1595,7 +1551,7 @@ void handle_ctrlc_signal(int) {
   @param sig              Signal number
 */
 
-void handle_quit_signal(int sig) {
+void handle_quit_signal(int sig [[maybe_unused]]) {
   const char *reason = "Terminal close";
 
   if (!executing_query) {
@@ -1740,13 +1696,14 @@ static struct my_option my_long_options[] = {
      &opt_compress, &opt_compress, nullptr, GET_BOOL, NO_ARG, 0, 0, 0, nullptr,
      0, nullptr},
 #ifdef NDEBUG
-    {"debug", '#', "This is a non-debug version. Catch this and exit.", 0, 0, 0,
-     GET_DISABLED, OPT_ARG, 0, 0, 0, 0, 0, 0},
+    {"debug", '#', "This is a non-debug version. Catch this and exit.", nullptr,
+     nullptr, nullptr, GET_DISABLED, OPT_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"debug-check", OPT_DEBUG_CHECK,
-     "This is a non-debug version. Catch this and exit.", 0, 0, 0, GET_DISABLED,
-     NO_ARG, 0, 0, 0, 0, 0, 0},
-    {"debug-info", 'T', "This is a non-debug version. Catch this and exit.", 0,
-     0, 0, GET_DISABLED, NO_ARG, 0, 0, 0, 0, 0, 0},
+     "This is a non-debug version. Catch this and exit.", nullptr, nullptr,
+     nullptr, GET_DISABLED, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
+    {"debug-info", 'T', "This is a non-debug version. Catch this and exit.",
+     nullptr, nullptr, nullptr, GET_DISABLED, NO_ARG, 0, 0, 0, nullptr, 0,
+     nullptr},
 #else
     {"debug", '#', "Output debug log.", &default_dbug_option,
      &default_dbug_option, nullptr, GET_STR, OPT_ARG, 0, 0, 0, nullptr, 0,
@@ -1857,12 +1814,6 @@ static struct my_option my_long_options[] = {
      nullptr, 0, nullptr},
     {"prompt", OPT_PROMPT, "Set the mysql prompt to this value.",
      &current_prompt, &current_prompt, nullptr, GET_STR_ALLOC, REQUIRED_ARG, 0,
-     0, 0, nullptr, 0, nullptr},
-    {"prompt_color_primary", OPT_PROMPT_COLOR_PRIMARY, "Set the primary mysql prompt color to this value.",
-     &current_prompt_color_primary, &current_prompt_color_primary, nullptr, GET_STR_ALLOC, REQUIRED_ARG, 0,
-     0, 0, nullptr, 0, nullptr},
-    {"prompt_color_replica", OPT_PROMPT_COLOR_REPLICA, "Set the replica mysql prompt color to this value.",
-     &current_prompt_color_replica, &current_prompt_color_replica, nullptr, GET_STR_ALLOC, REQUIRED_ARG, 0,
      0, 0, nullptr, 0, nullptr},
     {"protocol", OPT_MYSQL_PROTOCOL,
      "The protocol to use for connection (tcp, socket, pipe, memory).", nullptr,
@@ -2472,6 +2423,7 @@ static COMMANDS *find_command(char *name) {
       All commands are in the first part of commands array and have a function
       to implement it.
     */
+
     for (uint i = 0; commands[i].func; i++) {
       if (!my_strnncoll(&my_charset_latin1, (uchar *)name, len,
                         pointer_cast<const uchar *>(commands[i].name), len) &&
@@ -2731,15 +2683,12 @@ static char **new_mysql_completion(const char *text, int start, int end);
 */
 
 #if defined(EDITLINE_HAVE_COMPLETION_CHAR)
-char *no_completion(const char *, int)
+char *no_completion(const char *, int) { return nullptr; }
 #elif defined(EDITLINE_HAVE_COMPLETION_INT)
-int no_completion(const char *, int)
+int no_completion(const char *, int) { return 0; }
 #else
-char *no_completion()
+char *no_completion() { return nullptr; }
 #endif
-{
-  return 0; /* No filename completion */
-}
 
 /*
   returns 0 if line matches the previous history entry
@@ -3082,7 +3031,7 @@ static int reconnect(void) {
   if (opt_reconnect) {
     put_info("No connection. Trying to reconnect...", INFO_INFO);
     (void)com_connect((String *)nullptr, nullptr);
-    if (opt_rehash) com_rehash(nullptr, nullptr);
+    if (opt_rehash && connected) com_rehash(nullptr, nullptr);
   }
   if (!connected) return put_info("Can't connect to the server\n", INFO_ERROR);
   /* purecov: end */
@@ -3318,8 +3267,8 @@ static int com_charset(String *buffer [[maybe_unused]], char *line) {
   new_cs = get_charset_by_csname(param, MY_CS_PRIMARY, MYF(MY_WME));
   if (new_cs) {
     charset_info = new_cs;
-    mysql_set_character_set(&mysql, replace_utf8_utf8mb3(charset_info->csname));
-    default_charset = replace_utf8_utf8mb3(charset_info->csname);
+    mysql_set_character_set(&mysql, charset_info->csname);
+    default_charset = charset_info->csname;
     put_info("Charset changed", INFO_INFO);
   } else
     put_info("Charset is not found", INFO_INFO);
@@ -3389,16 +3338,19 @@ static int com_go(String *buffer, char *line [[maybe_unused]]) {
 
     if (quick) {
       if (!(result = mysql_use_result(&mysql)) && mysql_field_count(&mysql)) {
-        error = put_error(&mysql);
+	error = put_error(&mysql);
         goto end;
       }
     } else {
       error = mysql_store_result_for_lazy(&result);
-      if (error) goto end;
+      if (error) {
+        goto end;
+      }
     }
 
-    if (verbose >= 3 || !opt_silent)
+    if (verbose >= 3 || !opt_silent) {
       mysql_end_timer(timer, time_buff);
+    }
     else
       time_buff[0] = '\0';
 
@@ -3418,17 +3370,26 @@ static int com_go(String *buffer, char *line [[maybe_unused]]) {
         }
       } else {
         init_pager();
-        if (opt_html)
+        if (opt_html) {
+          printf("This is opt_html");
           print_table_data_html(result);
-        else if (opt_xml)
+	}
+        else if (opt_xml) {
+          printf("This is opt_xml");
           print_table_data_xml(result);
+	}
         else if (vertical || (auto_vertical_output &&
-                              (terminal_width < get_result_width(result))))
-          print_table_data_vertically(result);
-        else if (opt_silent && verbose <= 2 && !output_tables)
-          print_tab_data(result);
-        else
-          print_table_data(result);
+                              (terminal_width < get_result_width(result)))) {
+          printf("This is vertical");
+	  print_table_data_vertically(result);
+	}
+        else if (opt_silent && verbose <= 2 && !output_tables) {
+          printf("This is opt_silent");
+	  print_tab_data(result);
+	}
+        else {
+	  print_table_data(result);
+	}
         if (!batchmode)
           sprintf(buff, "%" PRId64 " %s in set", mysql_num_rows(result),
                   mysql_num_rows(result) == 1LL ? "row" : "rows");
@@ -3461,6 +3422,7 @@ static int com_go(String *buffer, char *line [[maybe_unused]]) {
       fflush(stdout);
     mysql_free_result(result);
   } while (!(err = mysql_next_result(&mysql)));
+  //} while ((1 == 1));
   if (err >= 1) error = put_error(&mysql);
 
 end:
@@ -3577,7 +3539,7 @@ static void print_field_types(MYSQL_RES *result) {
                 "Flags:      %s\n\n",
                 ++i, field->name, field->catalog, field->db, field->table,
                 field->org_table, fieldtype2str(field->type),
-                get_charset_name(field->charsetnr), field->charsetnr,
+                get_collation_name(field->charsetnr), field->charsetnr,
                 field->length, field->max_length, field->decimals,
                 fieldflags2str(field->flags));
   }
@@ -4072,7 +4034,7 @@ static int com_pager(String *buffer [[maybe_unused]],
   if (!param || !strlen(param))  // if pager was not given, use the default
   {
     if (!default_pager_set) {
-      tee_fprintf(stdout, "Default pager wasn't set, using stdout.\n");
+      tee_fprintf(stdout, "파라미터를 빼먹었잖아!!!\n");
       opt_nopager = true;
       my_stpcpy(pager, "stdout");
       PAGER = stdout;
@@ -4406,7 +4368,7 @@ static int com_use(String *buffer [[maybe_unused]], char *line) {
 static int normalize_dbname(const char *line, char *buff, uint buff_size) {
   MYSQL_RES *res = nullptr;
 
-  /* Send the "USE db" commmand to the server. */
+  /* Send the "USE db" command to the server. */
   if (mysql_query(&mysql, line)) return 1;
 
   /*
@@ -4466,7 +4428,44 @@ static int com_query_attributes(String *buffer [[maybe_unused]], char *line) {
 
     if (global_attrs->push_param(name, param))
       return put_info("Failed to push a parameter", INFO_ERROR, 0);
-  } while (param != 0);
+  } while (param != nullptr);
+  return 0;
+}
+
+static int com_ssl_session_data_print(String *buffer [[maybe_unused]],
+                                      char *line) {
+  char msgbuf[256];
+  char *param = get_arg(line, false);
+  const char *err_text = nullptr;
+  FILE *fo = nullptr;
+  void *data = nullptr;
+
+  if (param) {
+    if (nullptr == (fo = fopen(param, "w"))) {
+      err_text = "Failed to open the output file";
+      goto end;
+    }
+  } else
+    fo = stdout;
+
+  data = mysql_get_ssl_session_data(&mysql, 0, nullptr);
+  if (!data) {
+    err_text = nullptr;
+    put_error(&mysql);
+    goto end;
+  }
+  if (0 > fputs(reinterpret_cast<char *>(data), fo)) {
+    snprintf(msgbuf, sizeof(msgbuf), "Write of session data failed: %d (%s)",
+             errno, strerror(errno));
+    err_text = &msgbuf[0];
+    goto end;
+  }
+  if (fo == stdout) fputs("\n", fo);
+
+end:
+  if (data) mysql_free_ssl_session_data(&mysql, data);
+  if (fo && fo != stdout) fclose(fo);
+  if (err_text) return put_info(err_text, INFO_ERROR);
   return 0;
 }
 
@@ -4548,7 +4547,7 @@ static int sql_real_connect(char *host, char *database, char *user, char *,
 
   mysql_init(&mysql);
   if (init_connection_options(&mysql)) {
-    (void)put_error(&mysql);
+    put_error_if_any(&mysql);
     (void)fflush(stdout);
     return ignore_errors ? -1 : 1;
   }
@@ -4633,6 +4632,18 @@ static int sql_real_connect(char *host, char *database, char *user, char *,
   }
 #endif
 
+  if (ssl_client_check_post_connect_ssl_setup(
+          &mysql, [](const char *err) { put_info(err, INFO_ERROR); }))
+    return 1;
+
+  void *new_ssl_session_data = mysql_get_ssl_session_data(&mysql, 0, nullptr);
+  if (new_ssl_session_data != nullptr) {
+    if (ssl_session_data != nullptr)
+      mysql_free_ssl_session_data(&mysql, ssl_session_data);
+    ssl_session_data = new_ssl_session_data;
+  } else {
+    DBUG_PRINT("error", ("unable to save SSL session"));
+  }
 #ifdef _WIN32
   /* Convert --execute buffer from UTF8MB4 to connection character set */
   if (!execute_buffer_conversion_done && status.line_buff &&
@@ -4645,7 +4656,7 @@ static int sql_real_connect(char *host, char *database, char *user, char *,
     /*
       Don't convert trailing '\n' character - it was appended during
       last batch_readline_command() call.
-      Oherwise we'll get an extra line, which makes some tests fail.
+      Otherwise we'll get an extra line, which makes some tests fail.
     */
     if (status.line_buff->buffer[len - 1] == '\n') len--;
     if (tmp.copy(status.line_buff->buffer, len, &my_charset_utf8mb4_bin,
@@ -4656,8 +4667,7 @@ static int sql_real_connect(char *host, char *database, char *user, char *,
     batch_readline_end(status.line_buff);
 
     /* Re-initialize line buffer from the converted string */
-    if (!(status.line_buff =
-              batch_readline_command(NULL, (char *)tmp.c_ptr_safe())))
+    if (!(status.line_buff = batch_readline_command(nullptr, tmp.c_ptr_safe())))
       return 1;
   }
   execute_buffer_conversion_done = true;
@@ -4667,17 +4677,6 @@ static int sql_real_connect(char *host, char *database, char *user, char *,
 
   connected = true;
   mysql.reconnect = debug_info_flag;  // We want to know if this happens
-  
-  /* resolve aurora version (if remote server is aurora, if not remote_aurora_version will be set as nullptr */
-  resolve_aurora_version();
-  if(remote_aurora_version!=nullptr){
-    /* resolve aurora hostname and replication role via SQL */
-    resolve_aurora_info();
-  }else{
-    /* resolve hostname via port_post_map.list file, and resolve replication role via SQL */
-    resolve_mysql_info_by_port(opt_mysql_port);
-  }
-
 #ifdef HAVE_READLINE
   build_completion_hash(opt_rehash, true);
 #endif
@@ -4713,6 +4712,10 @@ static bool init_connection_options(MYSQL *mysql) {
     tee_fprintf(stdout, "%s", SSL_SET_OPTIONS_ERROR);
     return true;
   }
+
+  if (ssl_session_data)
+    mysql_options(mysql, MYSQL_OPT_SSL_SESSION_DATA, ssl_session_data);
+
   if (opt_protocol)
     mysql_options(mysql, MYSQL_OPT_PROTOCOL, (char *)&opt_protocol);
 
@@ -4827,7 +4830,7 @@ static int com_status(String *buffer [[maybe_unused]],
   tee_fprintf(stdout, "\nConnection id:\t\t%lu\n", mysql_thread_id(&mysql));
   /*
     Don't remove "limit 1",
-    it is protection againts SQL_SELECT_LIMIT=0
+    it is protection against SQL_SELECT_LIMIT=0
   */
   if (!mysql_store_result_for_lazy(&result)) {
     MYSQL_ROW cur = mysql_fetch_row(result);
@@ -4874,10 +4877,8 @@ static int com_status(String *buffer [[maybe_unused]],
     mysql_free_result(result);
   } else {
     /* Probably pre-4.1 server */
-    tee_fprintf(stdout, "Client characterset:\t%s\n",
-                replace_utf8_utf8mb3(charset_info->csname));
-    tee_fprintf(stdout, "Server characterset:\t%s\n",
-                replace_utf8_utf8mb3(mysql.charset->csname));
+    tee_fprintf(stdout, "Client characterset:\t%s\n", charset_info->csname);
+    tee_fprintf(stdout, "Server characterset:\t%s\n", mysql.charset->csname);
   }
 
   if (strstr(mysql_get_host_info(&mysql), "TCP/IP") || !mysql.unix_socket)
@@ -4886,6 +4887,8 @@ static int com_status(String *buffer [[maybe_unused]],
     tee_fprintf(stdout, "UNIX socket:\t\t%s\n", mysql.unix_socket);
   if (mysql.net.compress) tee_fprintf(stdout, "Protocol:\t\tCompressed\n");
   if (opt_binhex) tee_fprintf(stdout, "Binary data as:\t\tHexadecimal\n");
+  if (mysql_get_ssl_session_reused(&mysql))
+    tee_fprintf(stdout, "SSL session reused:\ttrue\n");
 
   if ((status_str = mysql_stat(&mysql)) && !mysql_error(&mysql)[0]) {
     ulong sec;
@@ -5003,6 +5006,19 @@ static int put_info(const char *str, INFO_TYPE info_type, uint error,
 static int put_error(MYSQL *con) {
   return put_info(mysql_error(con), INFO_ERROR, mysql_errno(con),
                   mysql_sqlstate(con));
+}
+
+/**
+ Prints the SQL error, if any
+
+ Similar to @ref put_error, but prints the error only if there is any.
+
+ @param con the connection to check for errors
+*/
+static void put_error_if_any(MYSQL *con) {
+  const char *err = mysql_error(con);
+  if (err && *err)
+    put_info(err, INFO_ERROR, mysql_errno(con), mysql_sqlstate(con));
 }
 
 static void remove_cntrl(String *buffer) {
@@ -5193,20 +5209,6 @@ static const char *construct_prompt() {
   time_t lclock = time(nullptr);  // Get the date struct
   struct tm *t = localtime(&lclock);
 
-  /* Start of prompt color */
-  bool need_to_reset_color = false;
-  if(remote_real_replrole!=nullptr){
-    if(strcmp(remote_real_replrole, "Primary")==0){
-      if(current_prompt_color_primary_code!=nullptr){
-        processed_prompt.append(current_prompt_color_primary_code);
-        need_to_reset_color = true;
-      }
-    }else if(current_prompt_color_replica_code!=nullptr){
-      processed_prompt.append(current_prompt_color_replica_code);
-      need_to_reset_color = true;
-    }
-  }
-
   /* parse thru the settings for the prompt */
   for (char *c = current_prompt; *c; c++) {
     if (*c != PROMPT_CHAR)
@@ -5344,37 +5346,11 @@ static const char *construct_prompt() {
           if (mysql.server_status & SERVER_STATUS_IN_TRANS)
             processed_prompt.append("*");
           break;
-        case 'X': /* must not be used in original mysql client */
-          if(remote_real_hostname!=nullptr){
-            processed_prompt.append(remote_real_hostname);
-	  }else{
-            const char *prompt;
-            prompt = connected ? mysql_get_host_info(&mysql) : "not_connected";
-            if (strstr(prompt, "Localhost"))
-              processed_prompt.append("localhost");
-            else {
-              const char *end = strcend(prompt, ' ');
-              processed_prompt.append(prompt, (uint)(end - prompt));
-            }
-          }
-          break;
-        case 'Z': /* must not be used in original mysql client */
-          if(remote_real_replrole!=nullptr)
-            processed_prompt.append(remote_real_replrole);
-          break;
         default:
           processed_prompt.append(c);
       }
     }
   }
-  /* End of prompt color */
-  if(need_to_reset_color){   
-    processed_prompt.append(RESET_PROMPT_COLOR_CODE);
-  }else{
-    /* RESET_PROMPT_COLOR_CODE has trailing space, so need to append single space when reset color is skipped */
-    processed_prompt.append(" ");
-  }
-
   processed_prompt.append('\0');
   return processed_prompt.ptr();
 }
@@ -5469,556 +5445,127 @@ static int com_resetconnection(String *buffer [[maybe_unused]],
   return error;
 }
 
-
-#define MAX_NAME      500
-#define MAX_SQL_LINE  1000
-#define MAX_SQL_LINE2 1000*2
-
-char* convert_color_name_to_code(char* color_name){
-  if(color_name!=nullptr){
-    if(strcmp(color_name, "black")==0)
-      return my_strdup(PSI_NOT_INSTRUMENTED, "\001\e[0;30;1m\002", MYF(MY_WME));
-    else if(strcmp(color_name, "red")==0)
-      return my_strdup(PSI_NOT_INSTRUMENTED, "\001\e[0;31;1m\002", MYF(MY_WME));
-    else if(strcmp(color_name, "green")==0)
-      return my_strdup(PSI_NOT_INSTRUMENTED, "\001\e[0;32;1m\002", MYF(MY_WME));
-    else if(strcmp(color_name, "yellow")==0)
-      return my_strdup(PSI_NOT_INSTRUMENTED, "\001\e[0;33;1m\002", MYF(MY_WME));
-    else if(strcmp(color_name, "blue")==0)
-      return my_strdup(PSI_NOT_INSTRUMENTED, "\001\e[0;34;1m\002", MYF(MY_WME));
-    else if(strcmp(color_name, "magenta")==0)
-      return my_strdup(PSI_NOT_INSTRUMENTED, "\001\e[0;35;1m\002", MYF(MY_WME));
-    else if(strcmp(color_name, "cyan")==0)
-      return my_strdup(PSI_NOT_INSTRUMENTED, "\001\e[0;36;1m\002", MYF(MY_WME));
-    else if(strcmp(color_name, "white")==0)
-      return my_strdup(PSI_NOT_INSTRUMENTED, "\001\e[0;37;1m\002", MYF(MY_WME));
-  }
-
-  /* read as default*/
-  return my_strdup(PSI_NOT_INSTRUMENTED, "\001\e[0;31;1m\002", MYF(MY_WME));
-}
-
-void warning_innodb_adaptive_hash_index(){
-  if (!status.batch) {
-    int error;
-    const char *query = "SHOW GLOBAL VARIABLES LIKE 'innodb_adaptive_hash_index'";
-    MYSQL_RES *result;
-    MYSQL_ROW row;
-
-    if(!connected && reconnect()){
-      return;
-    }
-    if((error = mysql_real_query_for_lazy(query, (int)strlen(query))) || (error = mysql_store_result_for_lazy(&result))){
-      // ERROR : error
-      return;
-    }
-
-    if(result){
-      unsigned int num_fields = mysql_num_fields(result);
-      uint64_t num_rows = mysql_num_rows(result);
-      if(num_fields==2 && num_rows==1){
-        if((row = mysql_fetch_row(result))){
-          char* var_value = row[1];
-          unsigned long *lengths = mysql_fetch_lengths(result);
-          if(lengths[1]>=2 && (var_value[0]=='O' || var_value[0]=='o') && (var_value[1]=='N' || var_value[1]=='n')){
-            put_info("\n******************************************************************************\n** WARNING                                                                  **\n******************************************************************************\n** Configured \"innodb_adaptive_hash_index=ON\"                               **\n** Becareful when you run ALTER TABLE command                               **\n******************************************************************************\n", INFO_INFO);
-          }
-        }
-      }
-      mysql_free_result(result);
-    }
-  }
-}
-
-void resolve_aurora_version(){
-  MYSQL_RES *rs = nullptr;
-  MYSQL_ROW row;
-
-  if(!connected && reconnect()){
-    return;
-  }
-
-  if(mysql_query(&mysql, "SHOW VARIABLES LIKE '%version'") == 0){
-    if((rs = mysql_store_result(&mysql))){
-      while((row = mysql_fetch_row(rs))){
-        if(row && row[0] && (strcmp(row[0], "aurora_version")==0)){
-          remote_aurora_version = my_strdup(PSI_NOT_INSTRUMENTED, row[1], MYF(MY_WME));
-          break;
-        }
-      }
-      mysql_free_result(rs);
-    }
-  }
-}
-
-void resolve_mysql_info_by_port(int current_port){
-  MYSQL_RES *rs = nullptr;
-  // 1. Resolve replication role
-  // No way to resolve hostname via SQL on original MySQL or Non-aurora MySQL RDS
-
-  if(!connected && reconnect()){
-    remote_real_replrole = my_strdup(PSI_NOT_INSTRUMENTED, "NotConnected", MYF(MY_WME));
-  }else if(mysql_query(&mysql, "SHOW SLAVE STATUS") == 0){
-    if((rs = mysql_store_result(&mysql))){
-      if(mysql_num_rows(rs)>0){
-        // If slave status is exist, then assume as "Replica"
-        remote_real_replrole = my_strdup(PSI_NOT_INSTRUMENTED, "Replica", MYF(MY_WME));
-      }else{
-        // Assume as "Primary"
-        remote_real_replrole = my_strdup(PSI_NOT_INSTRUMENTED, "Primary", MYF(MY_WME));
-      }
-      mysql_free_result(rs);
-    }
-  }
-  if(remote_real_replrole==nullptr){
-    // Error
-    remote_real_replrole = my_strdup(PSI_NOT_INSTRUMENTED, "Unknown", MYF(MY_WME));
-  }
-
-  // 2. Resolve hostname using port-host-map file
-  // If no port is specified, then current_port is "0"
-  current_port = (current_port==0) ? 3306 : current_port;
-
-  char temp_buffer[MAX_NAME+1];
-  snprintf(temp_buffer, MAX_NAME, "%s/%s", script_dir, "port_host_map.list");
-
-  std::ifstream port_host_file;
-  port_host_file.open(temp_buffer);
-  if(port_host_file.is_open() == false){
-    // remote_real_hostname = my_strdup(PSI_NOT_INSTRUMENTED, "NoHostmapFile", MYF(MY_WME));
-    remote_real_hostname = nullptr;
-  }else{
-    // bool is_unknown_format = false;
-    int temp_port;
-    char temp_host[MAX_NAME+1];
-    while(!port_host_file.eof()){
-      port_host_file.getline(temp_buffer, MAX_NAME);
-      int read_parts = std::sscanf(temp_buffer, "%d %s", &temp_port, temp_host);
-      if(read_parts==2){
-        if(temp_port == current_port){
-          remote_real_hostname = my_strdup(PSI_NOT_INSTRUMENTED, temp_host, MYF(MY_WME));
-	  break;
-        }
-      } //else{
-      //   is_unknown_format = true;
-      //}
-    }
-    //if(remote_real_hostname==nullptr){
-    //  if(is_unknown_format==true){
-    //    remote_real_hostname = my_strdup(PSI_NOT_INSTRUMENTED, "UnknownFormat", MYF(MY_WME));
-    //  }else{
-    //    remote_real_hostname = my_strdup(PSI_NOT_INSTRUMENTED, "PortNotFound", MYF(MY_WME));
-    //  }
-    //}
-
-    port_host_file.close();
-  }
-}
-
-void resolve_aurora_info(){
-  MYSQL_RES *rs = nullptr;
-  MYSQL_ROW row;
-
-  if(!connected && reconnect()){
-    remote_real_hostname = my_strdup(PSI_NOT_INSTRUMENTED, "NotConnected", MYF(MY_WME));
-    remote_real_replrole = my_strdup(PSI_NOT_INSTRUMENTED, "NotConnected", MYF(MY_WME));
-  }else if(mysql_query(&mysql,
-       "SELECT server_id, IF(session_id='MASTER_SESSION_ID','Primary', 'Replica') as server_role FROM information_schema.replica_host_status WHERE server_id=@@aurora_server_id") == 0){
-    if((rs = mysql_store_result(&mysql))){
-      if((row = mysql_fetch_row(rs))){
-        remote_real_hostname = my_strdup(PSI_NOT_INSTRUMENTED, row[0], MYF(MY_WME));
-        remote_real_replrole = my_strdup(PSI_NOT_INSTRUMENTED, row[1], MYF(MY_WME));
-      }
-      mysql_free_result(rs);
-    }
-    if(remote_real_hostname==nullptr){
-      // Error
-      // remote_real_hostname = my_strdup(PSI_NOT_INSTRUMENTED, "Unknown", MYF(MY_WME));
-      remote_real_replrole = my_strdup(PSI_NOT_INSTRUMENTED, "Unknonw", MYF(MY_WME));
-    }
-  }else{
-    // remote_real_hostname = my_strdup(PSI_NOT_INSTRUMENTED, "Unknown", MYF(MY_WME));
-    remote_real_hostname = nullptr;
-    remote_real_replrole = my_strdup(PSI_NOT_INSTRUMENTED, "Unknonw", MYF(MY_WME));
-  }
-}
-
-bool normalize_sql_line(char* str, int len){
-  bool is_ended_with_delimiter = false;
-  char* end = str + len - 1;
-  /* sometimes, ifstream.gcount() tell bigger than real string length, so skip NULL character */
-  while(end>str && (*end=='\0' || isspace(*end))){
-    *end = '\0';
-    end--;
-  }
-
-  /* vertical mode can not be used in this context */
-  // is_ended_with_delimiter = (*end==';' || (*end=='G' && --end>=str && *end=='\\'));
-  is_ended_with_delimiter = (*end==';');
-  return is_ended_with_delimiter;
-}
-
-int process_bind_variables(char* sql_line, int buffer_len, int str_len){
-  bool in_variable1 = false;
-  bool in_variable2 = false;
-  char orig_line[MAX_SQL_LINE+1];
-  char var_name[MAX_NAME+1];
-  char readline_prompt[MAX_NAME+1];
-
-  /* copy sql line into orig_line */
-  memcpy(orig_line, sql_line, str_len);
-  memset(sql_line, 0, buffer_len);
-
-  char* current_dest = sql_line;
-  char* current_orig = orig_line;
-  char* current_varname = var_name;
-  while(current_orig<=(orig_line + str_len) && *current_orig){
-    if(*current_orig=='#'){
-      in_variable1 = true;
-      in_variable2 = false;
-    }else if(in_variable1==true && *current_orig=='{'){
-      in_variable2 = true;
-    }else if(in_variable2==true && *current_orig=='}'){
-      *current_varname = '\0';
-      in_variable1 = false;
-      in_variable2 = false;
-      current_varname = var_name;
-
-      /* read in binding parameter from user */
-      snprintf(readline_prompt, MAX_NAME, "  > parameter #{%.200s}: ", var_name);
-      readline_prompt[MAX_NAME] = '\0';
-      char* input_value = readline(readline_prompt);
-      /* check buffer length */
-      if((current_dest - sql_line + (int)strlen(input_value)) > buffer_len){
-        return -1;
-      }
-
-      /* copy binding value into sql line */
-      char* tmp_ptr = input_value;
-      while(*tmp_ptr){
-        *current_dest= *tmp_ptr;
-	current_dest++; tmp_ptr++;
-      }
-      free(input_value);
-    }else{
-      if(in_variable2==true && (isalnum(*current_orig) || *current_orig=='_')){
-        *current_varname = *current_orig;
-        current_varname++;
-      }else{
-        /* check buffer length */
-        if((current_dest - sql_line) >= buffer_len){
-          return -1;
-        }
-
-        if(*current_orig){
-          *current_dest = *current_orig;
-          current_dest++;
-        }
-      }
-    }
-
-    current_orig++;
-  }
-
-  return (current_dest - sql_line);
-}
-
-#define MAX_SUBCOMMAND_LEN 5
+//by silver
+#ifndef MAX_SUBCOMMAND_LEN
+#define MAX_SUBCOMMAND_LEN 3
+#endif
 static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
-  // 1. Parse sub command (e.g. "\\[sub1][sub2][sub3]...")
-  char sub_command[MAX_SUBCOMMAND_LEN]="";
-  int len = strlen(line);
-  for(int idx=0; idx<MAX_SUBCOMMAND_LEN && len>(idx+2); idx++){
-    if(my_isspace(charset_info, line[idx+2])){
-      break;
-    }
-    sub_command[idx] = line[idx+2];
-  }
-
-  // 2. Parse argument (Only 1 arg is supported)
+  
+  char user_command[MAX_SUBCOMMAND_LEN]="";
   char object_name[FN_REFLEN] = "";
-  char *end, *param;
-  /* Skip space from file name */
-  while (my_isspace(charset_info, *line)) line++;
-  if (!(param = strchr(line, ' '))){  // Skip command name
-    // No object name is provided
-  }else{
+  char *end; 
+  char *param;
+  
+  // 명령어 정의
+  user_command[0] = line[2];
+  user_command[1] = line[3];
+  user_command[2] = line[4];
+  
+  while (my_isspace(charset_info, *line)) line++; 
+  if (!(param = strchr(line, ' '))){
+  }else{ 
     while (my_isspace(charset_info, *param)) param++;
     end = strmake(object_name, param, sizeof(object_name) - 1);
+    if (end > object_name){
+    }
     while (end > object_name && (my_isspace(charset_info, end[-1]) ||
                                  my_iscntrl(charset_info, end[-1])))
     end--;
     end[0] = 0;
   }
-
-  // 3. Save old vertical mode
+  
+  // Save old vertical mode(true일 경우 세로 출력 가능)
   bool oldvertical = vertical;
-  bool is_ended_with_delimier = true;
-  // 4. Run command
-  if(sub_command[0]=='t' && sub_command[1]==0){
-    if(strlen(object_name)>0){
+
+  // Run command
+  if(user_command[0]=='t' && user_command[1]=='c'){
       vertical = true;
       glob_buffer.append( STRING_WITH_LEN("  SHOW CREATE TABLE ") );
       glob_buffer.append( object_name, strlen(object_name) );
-      glob_buffer.append( STRING_WITH_LEN(";\n") );
+      glob_buffer.append( STRING_WITH_LEN(";") );
+  }
+  else if(user_command[0]=='t' && user_command[1]=='s'){
+      vertical = true;
       glob_buffer.append( STRING_WITH_LEN("  SHOW TABLE STATUS LIKE '") );
       glob_buffer.append( object_name, strlen(object_name) );
       glob_buffer.append( STRING_WITH_LEN("';") );
-    }else{
-      // if object name is not specified, list all tables
-      glob_buffer.append( STRING_WITH_LEN("  SHOW TABLES;") );
-    }
-  }else if(sub_command[0]=='d' && sub_command[1]==0){
-    if(strlen(object_name)>0){
+  }
+  else if(user_command[0]=='t' && user_command[1]=='t'){
+      glob_buffer.append( STRING_WITH_LEN("  SHOW TABLES LIKE '%") );
+      glob_buffer.append( object_name, strlen(object_name) );
+      glob_buffer.append( STRING_WITH_LEN("%';") );
+  }
+  else if(user_command[0]=='d' && user_command[1]=='c'){
       glob_buffer.append( STRING_WITH_LEN("  SHOW CREATE DATABASE ") );
       glob_buffer.append( object_name, strlen(object_name) );
       glob_buffer.append( STRING_WITH_LEN(";") );
-    }else{
-      glob_buffer.append( STRING_WITH_LEN("  SHOW DATABASES;") );
-    }
-  }else if(sub_command[0]=='f' && sub_command[1]==0){
-    if(strlen(object_name)>0){
-      vertical = true;
-      glob_buffer.append( STRING_WITH_LEN("  SHOW CREATE FUNCTION ") );
-      glob_buffer.append( object_name, strlen(object_name) );
-      glob_buffer.append( STRING_WITH_LEN(";") );
-    }else{
-      glob_buffer.append( STRING_WITH_LEN("  SELECT ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_TYPE, IS_DETERMINISTIC, EXTERNAL_LANGUAGE \n") );
-      glob_buffer.append( STRING_WITH_LEN("  FROM information_schema.ROUTINES \n") );
-      glob_buffer.append( STRING_WITH_LEN("  WHERE ROUTINE_SCHEMA NOT IN ('sys', 'information_schema', 'mysql', 'performance_schema') \n") );
-      glob_buffer.append( STRING_WITH_LEN("    AND ROUTINE_TYPE='FUNCTION' \n") );
-      glob_buffer.append( STRING_WITH_LEN("  ORDER BY ROUTINE_SCHEMA, ROUTINE_TYPE, ROUTINE_NAME;") );
-    }
-  }else if(sub_command[0]=='p' && sub_command[1]==0){
-    if(strlen(object_name)>0){
-      vertical = true;
-      glob_buffer.append( STRING_WITH_LEN("  SHOW CREATE PROCEDURE ") );
-      glob_buffer.append( object_name, strlen(object_name) );
-      glob_buffer.append( STRING_WITH_LEN(";") );
-    }else{
-      glob_buffer.append( STRING_WITH_LEN("  SELECT ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_TYPE, IS_DETERMINISTIC, EXTERNAL_LANGUAGE \n") );
-      glob_buffer.append( STRING_WITH_LEN("  FROM information_schema.ROUTINES \n") );
-      glob_buffer.append( STRING_WITH_LEN("  WHERE ROUTINE_SCHEMA NOT IN ('sys', 'information_schema', 'mysql', 'performance_schema') \n") );
-      glob_buffer.append( STRING_WITH_LEN("    AND ROUTINE_TYPE='PROCEDURE' \n") );
-      glob_buffer.append( STRING_WITH_LEN("  ORDER BY ROUTINE_SCHEMA, ROUTINE_TYPE, ROUTINE_NAME;") );
-    }
-  }else if(sub_command[0]=='t' && sub_command[1]=='g'){
-    if(strlen(object_name)>0){
-      vertical = true;
-      glob_buffer.append( STRING_WITH_LEN("  SHOW CREATE TRIGGER ") );
-      glob_buffer.append( object_name, strlen(object_name) );
-      glob_buffer.append( STRING_WITH_LEN(";") );
-    }else{
-      glob_buffer.append( STRING_WITH_LEN("  SELECT TRIGGER_SCHEMA, TRIGGER_NAME, EVENT_MANIPULATION, EVENT_OBJECT_SCHEMA, EVENT_OBJECT_TABLE \n") );
-      glob_buffer.append( STRING_WITH_LEN("  FROM information_schema.TRIGGERS \n") );
-      glob_buffer.append( STRING_WITH_LEN("  WHERE TRIGGER_SCHEMA NOT IN ('sys', 'information_schema', 'mysql', 'performance_schema') \n") );
-      glob_buffer.append( STRING_WITH_LEN("  ORDER BY TRIGGER_SCHEMA, TRIGGER_NAME;") );
-    }
-  }else if(sub_command[0]=='u' && sub_command[1]==0){
-    vertical = false;
-    if(strlen(object_name)>0){
-      glob_buffer.append( STRING_WITH_LEN("  SHOW CREATE USER ") );
-      glob_buffer.append( object_name, strlen(object_name) );
-      glob_buffer.append( STRING_WITH_LEN(";\n") );
-      glob_buffer.append( STRING_WITH_LEN("  SHOW GRANTS FOR ") );
-      glob_buffer.append( object_name, strlen(object_name) );
-      glob_buffer.append( STRING_WITH_LEN(";") );
-    }else{
-      // if object name is not specified, list all tables
-      glob_buffer.append( STRING_WITH_LEN("  SELECT user, host, account_locked, plugin as auth_plugin FROM mysql.user; ") );
-    }
-  }else if(sub_command[0]=='f' && sub_command[1]=='s'){
-    vertical = false;
-    if(strlen(object_name)>0){
-      glob_buffer.append( STRING_WITH_LEN(" SELECT \n") );
-      glob_buffer.append( STRING_WITH_LEN("   it.NAME TABLE_SPACE_NAME, \n") );
-      glob_buffer.append( STRING_WITH_LEN("   it.FILE_SIZE/1024/1024/1024 as TS_FILE_SIZE_GB \n") );
-      glob_buffer.append( STRING_WITH_LEN(" FROM information_schema.INNODB_TABLESPACES it \n") );
-      glob_buffer.append( STRING_WITH_LEN(" WHERE it.NAME LIKE '%") );
-      glob_buffer.append( object_name, strlen(object_name) );
-      glob_buffer.append( STRING_WITH_LEN("%' \n") );
-      glob_buffer.append( STRING_WITH_LEN(" ORDER BY TS_FILE_SIZE_GB DESC;") );
-    }else{
-      glob_buffer.append( STRING_WITH_LEN(" SELECT \n") );
-      glob_buffer.append( STRING_WITH_LEN("   IF(GROUPING(it.NAME), 'TOTAL', it.NAME) as TABLE_SPACE_NAME, \n") );
-      glob_buffer.append( STRING_WITH_LEN("   SUM(it.FILE_SIZE)/1024/1024/1024 as TS_FILE_SIZE_GB \n") );
-      glob_buffer.append( STRING_WITH_LEN(" FROM information_schema.INNODB_TABLESPACES it \n") );
-      glob_buffer.append( STRING_WITH_LEN(" GROUP BY it.NAME WITH ROLLUP \n") );
-      glob_buffer.append( STRING_WITH_LEN(" ORDER BY TS_FILE_SIZE_GB DESC;") );
-    }
-  }else if(sub_command[0]=='t' && sub_command[1]=='s'){
-    vertical = false;
-    if(strlen(object_name)>0){
-      glob_buffer.append( STRING_WITH_LEN(" SELECT \n") );
-      glob_buffer.append( STRING_WITH_LEN("   t.TABLE_NAME, \n") );
-      glob_buffer.append( STRING_WITH_LEN("   (t.DATA_LENGTH + t.INDEX_LENGTH)/1024/1024/1024 as TB_DATA_SIZE_GB \n") );
-      glob_buffer.append( STRING_WITH_LEN(" FROM information_schema.TABLES t \n") );
-      glob_buffer.append( STRING_WITH_LEN(" WHERE (t.DATA_LENGTH + t.INDEX_LENGTH)>1024*128 \n") );
-      glob_buffer.append( STRING_WITH_LEN("   AND t.TABLE_NAME='") );
-      glob_buffer.append( object_name, strlen(object_name) );
-      glob_buffer.append( STRING_WITH_LEN("'\n") );
-      glob_buffer.append( STRING_WITH_LEN(" ORDER BY TB_DATA_SIZE_GB DESC;") );
-    }else{
-      glob_buffer.append( STRING_WITH_LEN(" SELECT \n") );
-      glob_buffer.append( STRING_WITH_LEN("   IF(GROUPING(t.TABLE_NAME), 'TOTAL', t.TABLE_NAME) as TABLE_NAME, \n") );
-      glob_buffer.append( STRING_WITH_LEN("   (SUM(t.DATA_LENGTH + t.INDEX_LENGTH))/1024/1024/1024 as TB_DATA_SIZE_GB \n") );
-      glob_buffer.append( STRING_WITH_LEN(" FROM information_schema.TABLES t \n") );
-      glob_buffer.append( STRING_WITH_LEN(" WHERE (t.DATA_LENGTH + t.INDEX_LENGTH)>1024*64 \n") );
-      glob_buffer.append( STRING_WITH_LEN(" GROUP BY t.TABLE_NAME WITH ROLLUP \n") );
-      glob_buffer.append( STRING_WITH_LEN(" ORDER BY TB_DATA_SIZE_GB DESC;") );
-    }
-  }else if(sub_command[0]=='v' && sub_command[1]==0){
-    if(strlen(object_name)>0){
+  }
+  else if(user_command[0]=='d' && user_command[1]=='d' && user_command[2]==0){
+      glob_buffer.append( STRING_WITH_LEN("  SELECT row_number()over(order by schema_name) AS number, schema_name FROM INFORMATION_SCHEMA.SCHEMATA WHERE schema_name NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys');") );
+  }
+  else if(user_command[0]=='d' && user_command[1]=='d' && user_command[2]!=0){
+      int num_fields;
+      MYSQL_RES *result=nullptr;
+      //MYSQL_FIELD *field;
+      MYSQL_ROW row;
+      char cmd1[]="SELECT A.schema_name FROM (SELECT row_number()over(order by schema_name) AS number, schema_name FROM INFORMATION_SCHEMA.SCHEMATA WHERE schema_name NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')) AS A WHERE A.number = ";
+      char cmd2[2]={user_command[2], ';'}; //{데이터베이스, 세미콜론}
+      char chosen_database[100]="";
+
+      strcat(cmd1, cmd2);
+
+      mysql_query(&mysql, cmd1);
+      result = mysql_use_result(&mysql);
+      num_fields = mysql_field_count(&mysql);
+
+      while((row = mysql_fetch_row(result)) != NULL)
+      {
+          for(int i = 0; i < num_fields; i++)
+          {
+              //field = mysql_fetch_field_direct(result, i);
+              //printf("%s: %s, ", field->name, row[i]);
+              strcat(chosen_database, row[i]);
+              if (strlen(chosen_database) != 0){
+                  break;
+              }
+          }
+          printf("\n");
+      }
+      mysql_free_result(result);
+
+      current_db = my_strdup(PSI_NOT_INSTRUMENTED, chosen_database, MYF(MY_WME)); // 프롬프트에 Database 표시
+
+      glob_buffer.append( STRING_WITH_LEN("  USE ") );
+      glob_buffer.append( chosen_database, strlen(chosen_database) );
+
+  }
+  else if(user_command[0]=='p' && user_command[1]=='s'){
+      glob_buffer.append( STRING_WITH_LEN("  SHOW PROCESSLIST;"));
+  }
+  else if(user_command[0]=='u' && user_command[1]=='u'){
+      glob_buffer.append( STRING_WITH_LEN("  SELECT user,host FROM mysql.user;"));
+  }
+  else if(user_command[0]=='v' && user_command[1]=='v'){
       glob_buffer.append( STRING_WITH_LEN("  SHOW GLOBAL VARIABLES LIKE '%") );
       glob_buffer.append( object_name, strlen(object_name) );
-      glob_buffer.append( STRING_WITH_LEN("%'; ") );
-    }else{
-      glob_buffer.append( STRING_WITH_LEN("  SHOW GLOBAL VARIABLES;") );
-    }
-  }else if(sub_command[0]=='p' && sub_command[1]=='s'){
-    glob_buffer.append( STRING_WITH_LEN("  SHOW ") );
-    if(sub_command[2]=='+'){
-      glob_buffer.append( STRING_WITH_LEN("FULL ") );
-    }
-    glob_buffer.append( STRING_WITH_LEN("PROCESSLIST;") );
-  }else if(sub_command[0]=='r' && sub_command[1]!=0){
-    vertical = true;
-    if(sub_command[1]=='m' || sub_command[1]=='p'){
-      glob_buffer.append( STRING_WITH_LEN("  SHOW MASTER STATUS;") );
-    }else{
-      glob_buffer.append( STRING_WITH_LEN("  SHOW REPLICA STATUS;") );
-    }
-  }else if(sub_command[0]=='x' && sub_command[1]==0){
-    if(strlen(object_name)>0){
-      char script_path[MAX_NAME+1];
-      snprintf(script_path, MAX_NAME, "%s/%s.sql", script_dir, object_name);
-      script_path[MAX_NAME] = 0;
-
-      std::ifstream script_file;
-      script_file.open(script_path);
-      if (script_file.is_open() == false){
-        char error_message[MAX_SQL_LINE+1];
-        snprintf(error_message, MAX_SQL_LINE, "Script file not found : %s", script_path);
-        error_message[MAX_SQL_LINE] = '\0';
-        return put_info(error_message, INFO_ERROR, 0);
-      }else{
-        is_ended_with_delimier = false;
-        int line_no = 0;
-	int read_bytes = 0;
-        char temp_buffer[MAX_SQL_LINE2+1];
-	while(!script_file.eof()){
-          memset(temp_buffer, 0, MAX_SQL_LINE2+1);
-	  /* read only MAX_SQL_LINE (not MAX_SQL_LINE2), MAX_SQL_LINE2 is for after variable value binded */
-          script_file.getline(temp_buffer, MAX_SQL_LINE);
-	  read_bytes = script_file.gcount();
-	  if(read_bytes<=0) continue;
-
-	  temp_buffer[MAX_SQL_LINE] = '\0';
-	  is_ended_with_delimier = normalize_sql_line(temp_buffer, read_bytes);
-	  int rtn = process_bind_variables(temp_buffer, MAX_SQL_LINE2, read_bytes);
-          if(rtn<0){
-            glob_buffer.length(0);
-            char error_message[MAX_SQL_LINE+1];
-            snprintf(error_message, MAX_SQL_LINE, "Failed to bind parameter value");
-            error_message[MAX_SQL_LINE] = '\0';
-            return put_info(error_message, INFO_ERROR, 0);
-          }
-
-	  if(line_no++>0){
-            glob_buffer.append(STRING_WITH_LEN("\n"));
-	  }
-          glob_buffer.append(temp_buffer, strlen(temp_buffer));
-	}
-
-        if(!is_ended_with_delimier){
-          glob_buffer.append(STRING_WITH_LEN(";"));
-	}
-        script_file.close();
-      }
-    }else{
-      return put_info("Required script name\n\n>>Usage ::\n    x [script_name] : Run script_name.sql file", INFO_ERROR, 0);
-    }
-  }else if(sub_command[0]=='l' && (sub_command[1]=='w' || sub_command[1]=='l' || sub_command[1]=='+')){
-      glob_buffer.append( STRING_WITH_LEN("  SELECT r.trx_wait_started AS wait_started,\n") );
-      glob_buffer.append( STRING_WITH_LEN("    TIMEDIFF(NOW(), r.trx_wait_started) AS wait_age,\n") );
-      glob_buffer.append( STRING_WITH_LEN("    TIMESTAMPDIFF(SECOND, r.trx_wait_started, NOW()) AS wait_age_secs,\n") );
-      glob_buffer.append( STRING_WITH_LEN("    CONCAT(rl.object_schema, '.', rl.object_name) AS locked_table,\n") );
-      glob_buffer.append( STRING_WITH_LEN("    rl.index_name AS locked_index,\n") );
-      glob_buffer.append( STRING_WITH_LEN("    rl.lock_type AS locked_type,\n") );
-      glob_buffer.append( STRING_WITH_LEN("    r.trx_id AS waiting_trx_id,\n") );
-      glob_buffer.append( STRING_WITH_LEN("    r.trx_started as waiting_trx_started,\n") );
-      glob_buffer.append( STRING_WITH_LEN("    TIMEDIFF(NOW(), r.trx_started) AS waiting_trx_age,\n") );
-      glob_buffer.append( STRING_WITH_LEN("    r.trx_rows_locked AS waiting_trx_rows_locked,\n") );
-      glob_buffer.append( STRING_WITH_LEN("    r.trx_rows_modified AS waiting_trx_rows_modified,\n") );
-      glob_buffer.append( STRING_WITH_LEN("    r.trx_mysql_thread_id AS waiting_pid,\n") );
-      glob_buffer.append( STRING_WITH_LEN("    sys.format_statement(r.trx_query) AS waiting_query,\n") );
-      glob_buffer.append( STRING_WITH_LEN("    rl.engine_lock_id AS waiting_lock_id,\n") );
-      glob_buffer.append( STRING_WITH_LEN("    rl.lock_mode AS waiting_lock_mode,\n") );
-      glob_buffer.append( STRING_WITH_LEN("    b.trx_id AS blocking_trx_id,\n") );
-      glob_buffer.append( STRING_WITH_LEN("    b.trx_mysql_thread_id AS blocking_pid,\n") );
-      glob_buffer.append( STRING_WITH_LEN("    sys.format_statement(b.trx_query) AS blocking_query,\n") );
-      glob_buffer.append( STRING_WITH_LEN("    bl.engine_lock_id AS blocking_lock_id,\n") );
-      glob_buffer.append( STRING_WITH_LEN("    bl.lock_mode AS blocking_lock_mode,\n") );
-      glob_buffer.append( STRING_WITH_LEN("    b.trx_started AS blocking_trx_started,\n") );
-      glob_buffer.append( STRING_WITH_LEN("    TIMEDIFF(NOW(), b.trx_started) AS blocking_trx_age,\n") );
-      glob_buffer.append( STRING_WITH_LEN("    b.trx_rows_locked AS blocking_trx_rows_locked,\n") );
-      glob_buffer.append( STRING_WITH_LEN("    b.trx_rows_modified AS blocking_trx_rows_modified\n") );
-      glob_buffer.append( STRING_WITH_LEN("  FROM performance_schema.data_lock_waits w\n") );
-      glob_buffer.append( STRING_WITH_LEN("    INNER JOIN information_schema.innodb_trx b  ON b.trx_id = CAST(w.blocking_engine_transaction_id AS CHAR)\n") );
-      glob_buffer.append( STRING_WITH_LEN("    INNER JOIN information_schema.innodb_trx r  ON r.trx_id = CAST(w.requesting_engine_transaction_id AS CHAR)\n") );
-      glob_buffer.append( STRING_WITH_LEN("    INNER JOIN performance_schema.data_locks bl ON bl.engine_lock_id = w.blocking_engine_lock_id\n") );
-      glob_buffer.append( STRING_WITH_LEN("    INNER JOIN performance_schema.data_locks rl ON rl.engine_lock_id = w.requesting_engine_lock_id\n") );
-      glob_buffer.append( STRING_WITH_LEN("  ORDER BY r.trx_wait_started;") );
-  }else if(sub_command[0]=='t' && sub_command[1]=='x'){
-      glob_buffer.append( STRING_WITH_LEN("  SELECT tx.trx_state, tx.trx_mysql_thread_id, \n") );
-      glob_buffer.append( STRING_WITH_LEN("    (unix_timestamp(now()) - unix_timestamp(tx.trx_started)) as elapsed, \n") );
-      glob_buffer.append( STRING_WITH_LEN("    IFNULL(th.processlist_command,'Unknown') as command, \n") );
-      glob_buffer.append( STRING_WITH_LEN("    IFNULL(th.processlist_info, tx.trx_query) as last_query_of_trx, \n") );
-      glob_buffer.append( STRING_WITH_LEN("    th.PROCESSLIST_ID, th.PROCESSLIST_USER, th.PROCESSLIST_HOST \n") );
-      glob_buffer.append( STRING_WITH_LEN("  FROM information_schema.innodb_trx tx \n") );
-      glob_buffer.append( STRING_WITH_LEN("    LEFT JOIN performance_schema.threads th ON th.processlist_id=tx.trx_mysql_thread_id \n") );
-      glob_buffer.append( STRING_WITH_LEN("  WHERE tx.trx_state IN ('RUNNING', 'LOCK WAIT', 'ROLLING BACK', 'COMMITTING') \n") );
-      char temp_buffer[MAX_SQL_LINE+1];
-      strcpy(temp_buffer, "  AND (unix_timestamp(now()) - unix_timestamp(tx.trx_started))>=#{THRESHOLD_SECONDS};");
-      int rtn = process_bind_variables(temp_buffer, MAX_SQL_LINE, strlen(temp_buffer));
-      if(rtn<0){
-        glob_buffer.length(0);
-        char error_message[MAX_SQL_LINE+1];
-        snprintf(error_message, MAX_SQL_LINE, "Failed to bind parameter value");
-        error_message[MAX_SQL_LINE] = '\0';
-        return put_info(error_message, INFO_ERROR, 0);
-      }else{
-        glob_buffer.append( temp_buffer, strlen(temp_buffer) );
-        glob_buffer.append( STRING_WITH_LEN(";") );
-      }
-      /*
-      if(sub_command[2]!=0 && my_isdigit(&my_charset_utf8mb4_bin, sub_command[2])){
-        char threshold_second[5]="";
-        threshold_second[0] = sub_command[2];
-        if(sub_command[3]!=0 && my_isdigit(&my_charset_utf8mb4_bin, sub_command[3])){
-          threshold_second[1] = sub_command[3];
-        }
-        if(sub_command[4]!=0 && my_isdigit(&my_charset_utf8mb4_bin, sub_command[4])){
-          threshold_second[2] = sub_command[4];
-        }
-
-        glob_buffer.append( STRING_WITH_LEN("  AND (unix_timestamp(now()) - unix_timestamp(tx.trx_started))>=") );
-        glob_buffer.append( STRING_WITH_LEN(threshold_second) );
-        glob_buffer.append( STRING_WITH_LEN(";") );
-      }else{
-        glob_buffer.append( STRING_WITH_LEN("  AND (unix_timestamp(now()) - unix_timestamp(tx.trx_started))>=1;") );
-      }
-     */
-  }else{
-    return put_info("Unknown command\n\n>> Usage ::\n   =========================================================\n     u               : SHOW USERs\n     u [name]        : SHOW CREATE USER (name)\n     d               : SHOW DATABASEs\n     d [name]        : SHOW CREATE DATABASE (name)\n     t               : SHOW TABLEs\n     t [name]        : SHOW CREATE TABLE (name)\n     f               : SHOW all FUNCTIONs\n     f [name]        : SHOW CREATE FUNCTION (name)\n     p               : SHOW all PROCEDUREs\n     p [name]        : SHOW CREATE PROCEDURE (name)\n     tg              : SHOW all TRIGGERs\n     tg [name]       : SHOW CREATE TRIGGER (name)\n     ps              : SHOW PROCESSLIST\n     ps+             : SHOW FULL PROCESSLIST\n     rm (or rp)      : SHOW MASTER STATUS\n     rs (or rr)      : SHOW REPLICA STATUS\n     v               : SHOW GLOBAL VARIABLEs\n     v [name]        : SHOW GLOBAL VARIABLEs LIKE '%name%'\n     lw(or ll or l+) : Lock waiting list\n     tx              : Long transaction list (over N seconds)\n     fs              : List all data file size\n     fs [name]       : Data file size\n     ts              : List all tablespace size (index_length + data_length)\n     ts [name]       : Tablespace size (index_length + data_length)\n   =========================================================", INFO_ERROR, 0);
+      glob_buffer.append( STRING_WITH_LEN("%';") );
   }
-
+  else if(user_command[0]=='s' && user_command[1]=='s'){
+      glob_buffer.append( STRING_WITH_LEN("  SHOW SESSION STATUS LIKE '%") );
+      glob_buffer.append( object_name, strlen(object_name) );
+      glob_buffer.append( STRING_WITH_LEN("%';") );
+  }
+  else{
+    return put_info("Unknown command\n\n>> Usage ::\n   =========================================================\n     USER (name)\n     dd             : SHOW DATABASEs\n     dd?            : USE {database}\n     dc             : SHOW CREATE DATABASE (name)\n     tt             : SHOW TABLEs\n     tc             : SHOW CREATE TABLE (name)\n     ps             : SHOW PROCESSLIST\n     uu             : SHOW USER & HOST\n     \n   =========================================================", INFO_ERROR, 0);
+  }
   int rtn=0;
+
   if(glob_buffer.length()>0){
-    put_info(glob_buffer.ptr(), INFO_INFO);
+    //put_info(glob_buffer.ptr(), INFO_INFO); //수행된 명령을 출력할지 여부
     rtn = com_go(&glob_buffer, nullptr);
   }
 
   vertical = oldvertical;
+
   return rtn;
 }
