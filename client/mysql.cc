@@ -5447,7 +5447,7 @@ static int com_resetconnection(String *buffer [[maybe_unused]],
 
 //by silver
 #ifndef MAX_SUBCOMMAND_LEN
-#define MAX_SUBCOMMAND_LEN 3
+#define MAX_SUBCOMMAND_LEN 4
 #endif
 static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
   
@@ -5459,7 +5459,8 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
   // 명령어 정의
   user_command[0] = line[2];
   user_command[1] = line[3];
-  user_command[2] = line[4];
+  user_command[2] = line[4]; //use database number 1의 자리
+  user_command[3] = line[5]; //use database number 10의 자리
   
   while (my_isspace(charset_info, *line)) line++; 
   if (!(param = strchr(line, ' '))){
@@ -5509,7 +5510,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
       //MYSQL_FIELD *field;
       MYSQL_ROW row;
       char cmd1[]="SELECT A.schema_name FROM (SELECT row_number()over(order by schema_name) AS number, schema_name FROM INFORMATION_SCHEMA.SCHEMATA WHERE schema_name NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')) AS A WHERE A.number = ";
-      char cmd2[2]={user_command[2], ';'}; //{데이터베이스, 세미콜론}
+      char cmd2[3]={user_command[2], user_command[3], ';'}; //{데이터베이스, 세미콜론}
       char chosen_database[100]="";
 
       strcat(cmd1, cmd2);
