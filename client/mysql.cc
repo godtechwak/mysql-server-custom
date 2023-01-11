@@ -5504,7 +5504,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
   else if(user_command[0]=='d' && user_command[1]=='d' && user_command[2]==0){
       glob_buffer.append( STRING_WITH_LEN("  SELECT row_number()over(order by schema_name) AS number, schema_name FROM INFORMATION_SCHEMA.SCHEMATA WHERE schema_name NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys');") );
   }
-  else if(user_command[0]=='d' && user_command[1]=='d' && user_command[2]!=0){
+  else if(user_command[0]=='d' && user_command[1]=='d' && isdigit(user_command[2])==true){
       int num_fields;
       MYSQL_RES *result=nullptr;
       //MYSQL_FIELD *field;
