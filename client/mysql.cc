@@ -5541,7 +5541,12 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
 
   }
   else if(user_command[0]=='p' && user_command[1]=='s'){
-      glob_buffer.append( STRING_WITH_LEN("  SHOW PROCESSLIST;"));
+      if(user_command[2]=='f'){
+          glob_buffer.append( STRING_WITH_LEN("  SHOW FULL PROCESSLIST;"));
+        }
+        else{
+          glob_buffer.append( STRING_WITH_LEN("  SHOW PROCESSLIST;"));
+        }
   }
   else if(user_command[0]=='u' && user_command[1]=='u'){
       glob_buffer.append( STRING_WITH_LEN("  SELECT user,host FROM mysql.user;"));
