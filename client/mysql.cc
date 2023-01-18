@@ -5447,7 +5447,7 @@ static int com_resetconnection(String *buffer [[maybe_unused]],
 
 //by silver
 #ifndef MAX_SUBCOMMAND_LEN
-#define MAX_SUBCOMMAND_LEN 4
+#define MAX_SUBCOMMAND_LEN 6
 #endif
 static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
 
@@ -5459,8 +5459,10 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
     // 명령어 정의
     user_command[0] = line[2];
     user_command[1] = line[3];
-    user_command[2] = line[4]; //number 1의 자리
-    user_command[3] = line[5]; //number 10의 자리
+    user_command[2] = line[4];
+    user_command[3] = line[5];
+    user_command[4] = line[6];
+    user_command[5] = line[7];
 
     while (my_isspace(charset_info, *line)) line++;
     if (!(param = strchr(line, ' '))){
@@ -5479,19 +5481,11 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
     bool oldvertical = vertical;
 
     // Run command
-    if(user_command[0]=='t' && user_command[1]=='c'){
-        vertical = true;
-        glob_buffer.append( STRING_WITH_LEN("  SHOW CREATE TABLE ") );
-        glob_buffer.append( object_name, strlen(object_name) );
-        glob_buffer.append( STRING_WITH_LEN(";") );
-    }
-    else if(user_command[0]=='t' && user_command[1]=='s' && user_command[2]==0){
-        vertical = true;
-        glob_buffer.append( STRING_WITH_LEN("  SHOW TABLE STATUS LIKE '") );
-        glob_buffer.append( object_name, strlen(object_name) );
-        glob_buffer.append( STRING_WITH_LEN("';") );
-    }
-    else if(user_command[0]=='t' && user_command[1]=='s' && isdigit(user_command[2])==true){
+    //mysql> \\tc{number}
+    if(user_command[0]=='t' && user_command[1]=='c' && isdigit(user_command[2])==true){
+        if (user_command[2] == '0') {
+            return 0;
+        }
         MYSQL_RES *result=nullptr;
         char chosen_database[100]="";
         char chosen_table[100]="";
@@ -5508,7 +5502,60 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
 
         char cmd1[500]="SELECT A.table_name FROM (SELECT row_number()over(order by table_name) AS number, table_name FROM INFORMATION_SCHEMA.TABLES WHERE table_schema = '";
         char cmd2[30]="') AS A WHERE A.number = ";
-        char cmd3[2]={user_command[2], user_command[3]}; //{테이블 1의 자리, 테이블 10의 자리}
+        char cmd3[4]={user_command[2], user_command[3]}; //{테이블 1의 자리, 테이블 10의 자리}
+
+        vertical =true;
+        strcat(cmd1, chosen_database);
+        strcat(cmd1, cmd2);
+        strcat(cmd1, cmd3);
+        strcat(cmd1, ";");
+
+        mysql_query(&mysql, cmd1);
+        result = mysql_use_result(&mysql);
+        row = mysql_fetch_row(result);
+
+        strcat(chosen_table, row[0]); //선택한 테이블명 받아오기
+
+        glob_buffer.append( STRING_WITH_LEN(" SHOW CREATE TABLE ") );
+        glob_buffer.append( chosen_table, strlen(chosen_table) );
+        glob_buffer.append( STRING_WITH_LEN(";") );
+        mysql_free_result(result);
+    }
+    //mysql> \\tc{table}
+    else if(user_command[0]=='t' && user_command[1]=='c' && isdigit(user_command[2])==false){
+        glob_buffer.append( STRING_WITH_LEN(" SHOW CREATE TABLE ") );
+        glob_buffer.append( object_name, strlen(object_name) );
+        glob_buffer.append( STRING_WITH_LEN(";") );
+    }
+    //mysql> \\ts{table}
+    else if(user_command[0]=='t' && user_command[1]=='s' && isdigit(user_command[2])==false){
+        vertical = true;
+        glob_buffer.append( STRING_WITH_LEN("  SHOW TABLE STATUS LIKE '") );
+        glob_buffer.append( object_name, strlen(object_name) );
+        glob_buffer.append( STRING_WITH_LEN("';") );
+    }
+    //mysql> \\ts{number}
+    else if(user_command[0]=='t' && user_command[1]=='s' && isdigit(user_command[2])==true){
+        if (user_command[2] == '0'){
+            return 0;
+        }
+        MYSQL_RES *result=nullptr;
+        char chosen_database[100]="";
+        char chosen_table[100]="";
+        my_free(current_db);
+        current_db = nullptr;
+
+        mysql_query(&mysql, "SELECT DATABASE()");
+        result = mysql_use_result(&mysql);
+        MYSQL_ROW row = mysql_fetch_row(result);
+        strcat(chosen_database, row[0]); //현재 데이터베이스 받아오기
+
+        current_db = my_strdup(PSI_NOT_INSTRUMENTED, chosen_database, MYF(MY_WME)); // 프롬프트에 Database 표시
+        mysql_free_result(result);
+
+        char cmd1[500]="SELECT A.table_name FROM (SELECT row_number()over(order by table_name) AS number, table_name FROM INFORMATION_SCHEMA.TABLES WHERE table_schema = '";
+        char cmd2[30]="') AS A WHERE A.number = ";
+        char cmd3[4]={user_command[2], user_command[3]}; //{테이블 1의 자리, 테이블 10의 자리}
 
         vertical =true;
         strcat(cmd1, chosen_database);
@@ -5527,6 +5574,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         glob_buffer.append( STRING_WITH_LEN("';") );
         mysql_free_result(result);
     }
+    //mysql> \\tt
     else if(user_command[0]=='t' && user_command[1]=='t'){
         MYSQL_RES *res;
         char chosen_database[100]="";
@@ -5547,14 +5595,49 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         glob_buffer.append( chosen_database, strlen(chosen_database) );
         glob_buffer.append( STRING_WITH_LEN("';") );
     }
+    //mysql> \\dc
     else if(user_command[0]=='d' && user_command[1]=='c'){
         glob_buffer.append( STRING_WITH_LEN("  SHOW CREATE DATABASE ") );
         glob_buffer.append( object_name, strlen(object_name) );
         glob_buffer.append( STRING_WITH_LEN(";") );
     }
+    //mysql> \\dd
     else if(user_command[0]=='d' && user_command[1]=='d' && user_command[2]==0){
         glob_buffer.append( STRING_WITH_LEN("  SELECT row_number()over(order by schema_name) AS number, schema_name FROM INFORMATION_SCHEMA.SCHEMATA WHERE schema_name NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys');") );
     }
+    //mysql> \\dds
+    else if(user_command[0]=='d' && user_command[1]=='d' && user_command[2]=='s'){
+        // dds {table_name}
+        if (user_command[2]=='s' && isdigit(user_command[3])==true){
+            if (user_command[3] == '0'){
+                return 0;
+            }
+            MYSQL_RES *result=nullptr;
+            char chosen_database[100]="";
+
+            char cmd1[1000]="SELECT A.table_schema FROM (SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, SUM(index_length + data_length) AS index_data_size FROM information_schema.tables GROUP BY table_schema ORDER BY SUM(index_length + data_length)) AS A WHERE A.number = ";
+            char cmd2[4]={user_command[3], user_command[4]}; //{테이블 1의 자리, 테이블 10의 자리}
+
+            strcat(cmd1, cmd2);
+            strcat(cmd1, ";");
+
+            mysql_query(&mysql, cmd1);
+            result = mysql_use_result(&mysql);
+            MYSQL_ROW row = mysql_fetch_row(result);
+
+            strcat(chosen_database, row[0]); //선택한 데이터베이스 받아오기
+
+            glob_buffer.append( STRING_WITH_LEN("  SELECT table_name, table_schema, SUM(index_length + data_length) AS index_data_size FROM information_schema.tables WHERE table_schema = '") );
+            glob_buffer.append( chosen_database, strlen(chosen_database) );
+            glob_buffer.append( STRING_WITH_LEN("' GROUP BY table_name ORDER BY SUM(index_length + data_length);") );
+            mysql_free_result(result);
+        }
+        // dds
+        else if(user_command[2]=='s' && isdigit(user_command[3])==false){
+            glob_buffer.append( STRING_WITH_LEN("  SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, SUM(index_length + data_length) AS index_data_size FROM information_schema.tables GROUP BY table_schema ORDER BY SUM(index_length + data_length);") );
+        }
+    }
+    //mysql> \\dd{number}
     else if(user_command[0]=='d' && user_command[1]=='d' && isdigit(user_command[2])==true){
         int num_fields;
         MYSQL_RES *result=nullptr;
@@ -5590,22 +5673,26 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         glob_buffer.append( STRING_WITH_LEN("  USE ") );
         glob_buffer.append( chosen_database, strlen(chosen_database) );
     }
+    //mysql> \\ps
     else if(user_command[0]=='p' && user_command[1]=='s'){
         if(user_command[2]=='f'){
-	    glob_buffer.append( STRING_WITH_LEN("  SHOW FULL PROCESSLIST;"));
-	}
-	else{
-	    glob_buffer.append( STRING_WITH_LEN("  SHOW PROCESSLIST;"));
-	}
+            glob_buffer.append( STRING_WITH_LEN("  SHOW FULL PROCESSLIST;"));
+        }
+        else{
+            glob_buffer.append( STRING_WITH_LEN("  SHOW PROCESSLIST;"));
+        }
     }
+    //mysql> \\uu
     else if(user_command[0]=='u' && user_command[1]=='u'){
         glob_buffer.append( STRING_WITH_LEN("  SELECT user,host FROM mysql.user;"));
     }
+    //mysql> \\vv
     else if(user_command[0]=='v' && user_command[1]=='v'){
         glob_buffer.append( STRING_WITH_LEN("  SHOW GLOBAL VARIABLES LIKE '%") );
         glob_buffer.append( object_name, strlen(object_name) );
         glob_buffer.append( STRING_WITH_LEN("%';") );
     }
+    //mysql> \\ss
     else if(user_command[0]=='s' && user_command[1]=='s'){
         glob_buffer.append( STRING_WITH_LEN("  SHOW SESSION STATUS LIKE '%") );
         glob_buffer.append( object_name, strlen(object_name) );
