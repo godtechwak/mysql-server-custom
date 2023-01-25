@@ -55,6 +55,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 #include "typelib.h"
 #include "user_registration.h"
 #include "violite.h"
+#include <string.h>
 
 #ifdef HAVE_SYS_IOCTL_H
 #include <sys/ioctl.h>
@@ -5448,6 +5449,7 @@ static int com_resetconnection(String *buffer [[maybe_unused]],
 //by silver
 #ifndef MAX_SUBCOMMAND_LEN
 #define MAX_SUBCOMMAND_LEN 6
+#define STRCMP(a, E, b) (strcmp(a, b) E 0)
 #endif
 static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
 
@@ -5455,6 +5457,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
     char object_name[FN_REFLEN] = "";
     char *end;
     char *param;
+    char *aurora_user_command=line;
 
     // 명령어 정의
     user_command[0] = line[2];
@@ -5462,7 +5465,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
     user_command[2] = line[4];
     user_command[3] = line[5];
     user_command[4] = line[6];
-    user_command[5] = line[7];
+    user_command[5] = line[7]; // 예비
 
     while (my_isspace(charset_info, *line)) line++;
     if (!(param = strchr(line, ' '))){
@@ -5521,20 +5524,20 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         glob_buffer.append( STRING_WITH_LEN(";") );
         mysql_free_result(result);
     }
-    //mysql> \\tc{table}
+        //mysql> \\tc{table}
     else if(user_command[0]=='t' && user_command[1]=='c' && isdigit(user_command[2])==false){
         glob_buffer.append( STRING_WITH_LEN(" SHOW CREATE TABLE ") );
         glob_buffer.append( object_name, strlen(object_name) );
         glob_buffer.append( STRING_WITH_LEN(";") );
     }
-    //mysql> \\ts{table}
+        //mysql> \\ts{table}
     else if(user_command[0]=='t' && user_command[1]=='s' && isdigit(user_command[2])==false){
         vertical = true;
         glob_buffer.append( STRING_WITH_LEN("  SHOW TABLE STATUS LIKE '") );
         glob_buffer.append( object_name, strlen(object_name) );
         glob_buffer.append( STRING_WITH_LEN("';") );
     }
-    //mysql> \\ts{number}
+        //mysql> \\ts{number}
     else if(user_command[0]=='t' && user_command[1]=='s' && isdigit(user_command[2])==true){
         if (user_command[2] == '0'){
             return 0;
@@ -5574,7 +5577,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         glob_buffer.append( STRING_WITH_LEN("';") );
         mysql_free_result(result);
     }
-    //mysql> \\tt
+        //mysql> \\tt
     else if(user_command[0]=='t' && user_command[1]=='t'){
         MYSQL_RES *res;
         char chosen_database[100]="";
@@ -5595,17 +5598,17 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         glob_buffer.append( chosen_database, strlen(chosen_database) );
         glob_buffer.append( STRING_WITH_LEN("';") );
     }
-    //mysql> \\dc
+        //mysql> \\dc
     else if(user_command[0]=='d' && user_command[1]=='c'){
         glob_buffer.append( STRING_WITH_LEN("  SHOW CREATE DATABASE ") );
         glob_buffer.append( object_name, strlen(object_name) );
         glob_buffer.append( STRING_WITH_LEN(";") );
     }
-    //mysql> \\dd
+        //mysql> \\dd
     else if(user_command[0]=='d' && user_command[1]=='d' && user_command[2]==0){
-        glob_buffer.append( STRING_WITH_LEN("  SELECT row_number()over(order by schema_name) AS number, schema_name FROM INFORMATION_SCHEMA.SCHEMATA WHERE schema_name NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys');") );
+	glob_buffer.append( STRING_WITH_LEN("  SELECT row_number()over(order by schema_name) AS number, schema_name FROM INFORMATION_SCHEMA.SCHEMATA WHERE schema_name NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys');") );
     }
-    //mysql> \\dds
+        //mysql> \\dds
     else if(user_command[0]=='d' && user_command[1]=='d' && user_command[2]=='s'){
         // dds {table_name}
         if (user_command[2]=='s' && isdigit(user_command[3])==true){
@@ -5632,12 +5635,12 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
             glob_buffer.append( STRING_WITH_LEN("' GROUP BY table_name ORDER BY SUM(index_length + data_length);") );
             mysql_free_result(result);
         }
-        // dds
+            // dds
         else if(user_command[2]=='s' && isdigit(user_command[3])==false){
             glob_buffer.append( STRING_WITH_LEN("  SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, SUM(index_length + data_length) AS index_data_size FROM information_schema.tables GROUP BY table_schema ORDER BY SUM(index_length + data_length);") );
         }
     }
-    //mysql> \\dd{number}
+        //mysql> \\dd{number}
     else if(user_command[0]=='d' && user_command[1]=='d' && isdigit(user_command[2])==true){
         int num_fields;
         MYSQL_RES *result=nullptr;
@@ -5673,7 +5676,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         glob_buffer.append( STRING_WITH_LEN("  USE ") );
         glob_buffer.append( chosen_database, strlen(chosen_database) );
     }
-    //mysql> \\ps
+        //mysql> \\ps
     else if(user_command[0]=='p' && user_command[1]=='s'){
         if(user_command[2]=='f'){
             glob_buffer.append( STRING_WITH_LEN("  SHOW FULL PROCESSLIST;"));
@@ -5682,21 +5685,26 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
             glob_buffer.append( STRING_WITH_LEN("  SHOW PROCESSLIST;"));
         }
     }
-    //mysql> \\uu
+        //mysql> \\uu
     else if(user_command[0]=='u' && user_command[1]=='u'){
         glob_buffer.append( STRING_WITH_LEN("  SELECT user,host FROM mysql.user;"));
     }
-    //mysql> \\vv
+        //mysql> \\vv
     else if(user_command[0]=='v' && user_command[1]=='v'){
         glob_buffer.append( STRING_WITH_LEN("  SHOW GLOBAL VARIABLES LIKE '%") );
         glob_buffer.append( object_name, strlen(object_name) );
         glob_buffer.append( STRING_WITH_LEN("%';") );
     }
-    //mysql> \\ss
+        //mysql> \\ss
     else if(user_command[0]=='s' && user_command[1]=='s'){
         glob_buffer.append( STRING_WITH_LEN("  SHOW SESSION STATUS LIKE '%") );
         glob_buffer.append( object_name, strlen(object_name) );
         glob_buffer.append( STRING_WITH_LEN("%';") );
+    }
+        //mysql> \\aurora
+    else if(STRCMP(aurora_user_command, ==, "\\\\aurora")){
+	puts("connect to MySQL on Amazon RDS SQL reference website...");
+        system("open https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Appendix.MySQL.SQLRef.html");
     }
     else{
         return put_info("Unknown command\n\n>> Usage ::\n   =========================================================\n     USER (name)\n     dd             : SHOW DATABASEs\n     dd?            : USE {database}\n     dc             : SHOW CREATE DATABASE (name)\n     tt             : SHOW TABLEs\n     tc             : SHOW CREATE TABLE (name)\n     ps             : SHOW PROCESSLIST\n     uu             : SHOW USER & HOST\n     \n   =========================================================", INFO_ERROR, 0);
