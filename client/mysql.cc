@@ -5703,7 +5703,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
     }
         //mysql> \\aurora
     else if(STRCMP(aurora_user_command, ==, "\\\\aurora")){
-	puts("connect to MySQL on Amazon RDS SQL reference website...");
+	puts("connect to MySQL on Amazon RDS SQL reference...");
         system("open https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Appendix.MySQL.SQLRef.html");
     }
     else{
