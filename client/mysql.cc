@@ -5457,7 +5457,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
     char object_name[FN_REFLEN] = "";
     char *end;
     char *param;
-    char *aurora_user_command=line;
+    char *aurora_user_command=line; //aurora command
 
     // 명령어 정의
     user_command[0] = line[2];
