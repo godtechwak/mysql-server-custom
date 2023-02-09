@@ -5457,7 +5457,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
     char object_name[FN_REFLEN] = "";
     char *end;
     char *param;
-    char *aurora_user_command=line; //aurora command
+    char *aurora_user_command=line;
 
     // 명령어 정의
     user_command[0] = line[2];
@@ -5548,9 +5548,10 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         my_free(current_db);
         current_db = nullptr;
 
-        mysql_query(&mysql, "SELECT DATABASE()");
+        mysql_query(&mysql, "SELECT IFNULL(DATABASE(), 'none')");
         result = mysql_use_result(&mysql);
         MYSQL_ROW row = mysql_fetch_row(result);
+
         strcat(chosen_database, row[0]); //현재 데이터베이스 받아오기
 
         current_db = my_strdup(PSI_NOT_INSTRUMENTED, chosen_database, MYF(MY_WME)); // 프롬프트에 Database 표시
@@ -5585,9 +5586,9 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         my_free(current_db);
         current_db = nullptr;
 
-        mysql_query(&mysql, "SELECT DATABASE()");
+        mysql_query(&mysql, "SELECT IFNULL(DATABASE(), 'none')");
         res = mysql_use_result(&mysql);
-        //res에 값이 없을 경우 예외 처리
+
         MYSQL_ROW row = mysql_fetch_row(res);
         strcat(chosen_database, row[0]); //현재 데이터베이스 받아오기
 
@@ -5701,7 +5702,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         glob_buffer.append( object_name, strlen(object_name) );
         glob_buffer.append( STRING_WITH_LEN("%';") );
     }
-        //mysql> \\aurora
+        //mysql> \\aurora 
     else if(STRCMP(aurora_user_command, ==, "\\\\aurora")){
 	puts("connect to MySQL on Amazon RDS SQL reference...");
         system("open https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Appendix.MySQL.SQLRef.html");
