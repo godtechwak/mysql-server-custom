@@ -5245,7 +5245,7 @@ static const char *construct_prompt() {
                     else {
                         if (strstr(prompt, "prod"))
                             printf("\033[0;31m"); //Red by silver
-                        else if (strstr(prompt, "alpha"))
+                        else if (strstr(prompt, "dev"))
                             printf("\033[0;33m"); //Yellow by silver
                         else
                             printf("\033[0;32m"); //Green by silver
