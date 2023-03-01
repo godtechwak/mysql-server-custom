@@ -2391,6 +2391,7 @@ static COMMANDS *find_command(char cmd_char) {
      the command's pointer or NULL.
 */
 static COMMANDS *find_command(char *name) {
+    printf("\033[0m"); //Release Color by silver
     uint len;
     char *end;
     DBUG_TRACE;
@@ -5235,14 +5236,22 @@ static const char *construct_prompt() {
                     processed_prompt.append(current_db ? current_db : "(none)");
                     break;
                 case 'h': {
-                    const char *prompt;
+		    const char *prompt;
                     prompt = connected ? mysql_get_host_info(&mysql) : "not_connected";
-                    if (strstr(prompt, "Localhost"))
+                    if (strstr(prompt, "Localhost")) {
+                        printf("\033[0;32m"); //Green by silver
                         processed_prompt.append("localhost");
+                    }
                     else {
+                        if (strstr(prompt, "prod"))
+                            printf("\033[0;31m"); //Red by silver
+                        else if (strstr(prompt, "alpha"))
+                            printf("\033[0;33m"); //Yellow by silver
+                        else
+                            printf("\033[0;32m"); //Green by silver
                         const char *end = strcend(prompt, ' ');
                         processed_prompt.append(prompt, (uint)(end - prompt));
-                    }
+                    }			                  
                     break;
                 }
                 case 'p': {
