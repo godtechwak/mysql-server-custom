@@ -5525,6 +5525,11 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         mysql_query(&mysql, cmd1);
         result = mysql_use_result(&mysql);
         row = mysql_fetch_row(result);
+	    
+	if (row == NULL) {
+	    puts("Table not exist\n");
+	    return 0;
+	}
 
         strcat(chosen_table, row[0]); //선택한 테이블명 받아오기
 
@@ -5579,6 +5584,11 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         mysql_query(&mysql, cmd1);
         result = mysql_use_result(&mysql);
         row = mysql_fetch_row(result);
+	    
+	if (row == NULL) {
+	    puts("Table not exist"\n);
+	    return 0;
+	}
 
         strcat(chosen_table, row[0]); //선택한 테이블명 받아오기
 
