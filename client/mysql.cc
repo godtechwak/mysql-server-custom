@@ -5705,10 +5705,10 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
             glob_buffer.append( STRING_WITH_LEN("  SHOW PROCESSLIST;"));
         }
     }
-        //mysql> \\uus
-    else if(user_command[0]=='u' && user_command[1]=='u' && user_command[2]=='s'){
-        // uus {user_number}
-        if (user_command[2]=='s' && isdigit(user_command[3])==true){
+        //mysql> \\uuc
+    else if(user_command[0]=='u' && user_command[1]=='u' && user_command[2]=='c'){
+        // uuc {user_number}
+        if (user_command[2]=='c' && isdigit(user_command[3])==true){
             if (user_command[3] == '0'){
                 return 0;
             }
@@ -5728,7 +5728,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
 
             strcat(chosen_user, row[1]); // 선택한 유저 받아오기
             strcat(chosen_host, row[2]); // 선택한 유저 받아오기
-
+            
             glob_buffer.append( STRING_WITH_LEN("  SHOW CREATE USER '"));
             glob_buffer.append( chosen_user, strlen(chosen_user) );
             glob_buffer.append( STRING_WITH_LEN("'@'"));
@@ -5738,14 +5738,47 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
 
         }
         // uus
+        else if (user_command[2]=='c' && isdigit(user_command[3])==false){
+            glob_buffer.append( STRING_WITH_LEN("  SELECT A.number, A.user, A.host FROM (SELECT row_number()over(order by host) AS number, user, host FROM mysql.user WHERE user NOT IN ('mysql.infoschema', 'mysql.session', 'mysql.sys')) AS A;"));
+        }
+        
+    }
+        //mysql> \\uug
+    else if(user_command[0]=='u' && user_command[1]=='u' && user_command[2]=='g'){
+        // uug {user_number}
+        if (user_command[2]=='g' && isdigit(user_command[3])==true){
+            if (user_command[3] == '0'){
+                return 0;
+            }
+            MYSQL_RES *result=nullptr;
+            char chosen_user[100]="";
+            char chosen_host[100]="";
+
+            char cmd1[1000]="SELECT A.number, A.user, A.host FROM (SELECT row_number()over(order by host) AS number, user, host FROM mysql.user WHERE user NOT IN ('mysql.infoschema', 'mysql.session', 'mysql.sys')) AS A WHERE A.number = ";
+            char cmd2[4]={user_command[3], user_command[4]}; //{유저 1의 자, 유저 10의 자리}
+
+            strcat(cmd1, cmd2);
+            strcat(cmd1, ";");
+
+            mysql_query(&mysql, cmd1);
+            result = mysql_use_result(&mysql);
+            MYSQL_ROW row = mysql_fetch_row(result);
+
+            strcat(chosen_user, row[1]); // 선택한 유저 받아오기
+            strcat(chosen_host, row[2]); // 선택한 유저 받아오기
+            
+            glob_buffer.append( STRING_WITH_LEN("  SHOW GRANTS FOR '"));
+            glob_buffer.append( chosen_user, strlen(chosen_user) );
+            glob_buffer.append( STRING_WITH_LEN("'@'"));
+            glob_buffer.append( chosen_host, strlen(chosen_host) );
+            glob_buffer.append( STRING_WITH_LEN("';"));
+            mysql_free_result(result);
+
+        }
+        // uug
         else if (user_command[2]=='s' && isdigit(user_command[3])==false){
             glob_buffer.append( STRING_WITH_LEN("  SELECT A.number, A.user, A.host FROM (SELECT row_number()over(order by host) AS number, user, host FROM mysql.user WHERE user NOT IN ('mysql.infoschema', 'mysql.session', 'mysql.sys')) AS A;"));
         }
-
-    }
-        //mysql> \\uug
-    else if(user_command[0]=='u' && user_command[1]=='u'){
-        glob_buffer.append( STRING_WITH_LEN("  SELECT A.number, A.user, A.host FROM (SELECT row_number()over(order by host) AS number, user, host FROM mysql.user WHERE user NOT IN ('mysql.infoschema', 'mysql.session', 'mysql.sys')) AS A;"));
     }
         //mysql> \\uu
     else if(user_command[0]=='u' && user_command[1]=='u'){
