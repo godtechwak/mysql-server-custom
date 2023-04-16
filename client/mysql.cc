@@ -5662,10 +5662,9 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
     }
         //mysql> \\dd{number}
     else if(user_command[0]=='d' && user_command[1]=='d' && isdigit(user_command[2])==true){
-        int num_fields;
+        //int num_fields;
         MYSQL_RES *result=nullptr;
         //MYSQL_FIELD *field;
-        MYSQL_ROW row;
         char cmd1[]="SELECT A.schema_name FROM (SELECT row_number()over(order by schema_name) AS number, schema_name FROM INFORMATION_SCHEMA.SCHEMATA WHERE schema_name NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')) AS A WHERE A.number = ";
         char cmd2[3]={user_command[2], user_command[3], ';'}; //{데이터베이스, 세미콜론}
         char chosen_database[100]="";
@@ -5674,8 +5673,10 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
 
         mysql_query(&mysql, cmd1);
         result = mysql_use_result(&mysql);
-        num_fields = mysql_field_count(&mysql);
+        MYSQL_ROW row = mysql_fetch_row(result);
+        strcat(chosen_database, row[0]); //선택한 데이터베이스 받아오기
 
+        /*
         while((row = mysql_fetch_row(result)) != NULL)
         {
             for(int i = 0; i < num_fields; i++)
@@ -5689,6 +5690,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
             }
             printf("\n");
         }
+        */
         mysql_free_result(result);
 
         current_db = my_strdup(PSI_NOT_INSTRUMENTED, chosen_database, MYF(MY_WME)); // 프롬프트에 Database 표시
