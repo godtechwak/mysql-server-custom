@@ -5648,6 +5648,11 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
             result = mysql_use_result(&mysql);
             MYSQL_ROW row = mysql_fetch_row(result);
 
+	    if (row == NULL) {
+	        puts("Table not exist\n");
+	        return 0;
+	    }
+		
             strcat(chosen_database, row[0]); //선택한 데이터베이스 받아오기
 
             glob_buffer.append( STRING_WITH_LEN("  SELECT table_name, table_schema, SUM(index_length + data_length) AS index_data_size FROM information_schema.tables WHERE table_schema = '") );
@@ -5674,6 +5679,12 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         mysql_query(&mysql, cmd1);
         result = mysql_use_result(&mysql);
         MYSQL_ROW row = mysql_fetch_row(result);
+	
+	if (row == NULL) {
+	    puts("Table not exist\n");
+	    return 0;
+	}
+	    
         strcat(chosen_database, row[0]); //선택한 데이터베이스 받아오기
 
         /*
@@ -5727,6 +5738,11 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
             mysql_query(&mysql, cmd1);
             result = mysql_use_result(&mysql);
             MYSQL_ROW row = mysql_fetch_row(result);
+		
+	    if (row == NULL) {
+	        puts("Table not exist\n");
+	        return 0;
+	    }
 
             strcat(chosen_user, row[1]); // 선택한 유저 받아오기
             strcat(chosen_host, row[2]); // 선택한 유저 받아오기
@@ -5766,6 +5782,11 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
             result = mysql_use_result(&mysql);
             MYSQL_ROW row = mysql_fetch_row(result);
 
+	    if (row == NULL) {
+	        puts("Table not exist\n");
+	        return 0;
+	    }
+		
             strcat(chosen_user, row[1]); // 선택한 유저 받아오기
             strcat(chosen_host, row[2]); // 선택한 유저 받아오기
             
