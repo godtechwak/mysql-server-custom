@@ -5535,9 +5535,9 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
 
         strcat(chosen_table, row[0]); //선택한 테이블명 받아오기
 
-        glob_buffer.append( STRING_WITH_LEN(" SHOW CREATE TABLE ") );
+        glob_buffer.append( STRING_WITH_LEN(" SHOW CREATE TABLE `") );
         glob_buffer.append( chosen_table, strlen(chosen_table) );
-        glob_buffer.append( STRING_WITH_LEN(";") );
+        glob_buffer.append( STRING_WITH_LEN("`;") );
         mysql_free_result(result);
     }
         //mysql> \\tc{table}
