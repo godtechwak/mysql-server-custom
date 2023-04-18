@@ -5504,7 +5504,8 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         my_free(current_db);
         current_db = nullptr;
 
-        mysql_query(&mysql, "SELECT DATABASE()");
+	mysql_query(&mysql, "SELECT IFNULL(DATABASE(), 'none')");
+	    
         result = mysql_use_result(&mysql);
         MYSQL_ROW row = mysql_fetch_row(result);
         strcat(chosen_database, row[0]); //현재 데이터베이스 받아오기
