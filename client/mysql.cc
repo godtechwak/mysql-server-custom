@@ -5586,7 +5586,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         row = mysql_fetch_row(result);
 	    
 	if (row == NULL) {
-	    puts("Table not exist"\n);
+	    puts("Table not exist\n");
 	    return 0;
 	}
 
