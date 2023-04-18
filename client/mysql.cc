@@ -5529,6 +5529,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
 	    
 	if (row == NULL) {
 	    puts("Table not exist\n");
+	    vertical = oldvertical;
 	    return 0;
 	}
 
@@ -5588,6 +5589,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
 	    
 	if (row == NULL) {
 	    puts("Table not exist\n");
+	    vertical = oldvertical;
 	    return 0;
 	}
 
