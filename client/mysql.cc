@@ -5629,7 +5629,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
     }
         //mysql> \\dd
     else if(user_command[0]=='d' && user_command[1]=='d' && user_command[2]==0){
-	glob_buffer.append( STRING_WITH_LEN("  SELECT row_number()over(order by schema_name) AS number, schema_name FROM INFORMATION_SCHEMA.SCHEMATA WHERE schema_name NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys');") );
+	glob_buffer.append( STRING_WITH_LEN("  SELECT row_number()over(order by schema_name) AS number, schema_name FROM INFORMATION_SCHEMA.SCHEMATA WHERE schema_name NOT IN ('mysql', 'sys');") );
     }
         //mysql> \\dds
     else if(user_command[0]=='d' && user_command[1]=='d' && user_command[2]=='s'){
@@ -5673,7 +5673,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         //int num_fields;
         MYSQL_RES *result=nullptr;
         //MYSQL_FIELD *field;
-        char cmd1[]="SELECT A.schema_name FROM (SELECT row_number()over(order by schema_name) AS number, schema_name FROM INFORMATION_SCHEMA.SCHEMATA WHERE schema_name NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')) AS A WHERE A.number = ";
+        char cmd1[]="SELECT A.schema_name FROM (SELECT row_number()over(order by schema_name) AS number, schema_name FROM INFORMATION_SCHEMA.SCHEMATA WHERE schema_name NOT IN ('mysql', 'sys')) AS A WHERE A.number = ";
         char cmd2[3]={user_command[2], user_command[3], ';'}; //{데이터베이스, 세미콜론}
         char chosen_database[100]="";
 
