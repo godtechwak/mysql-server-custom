@@ -5542,9 +5542,9 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
     }
         //mysql> \\tc{table}
     else if(user_command[0]=='t' && user_command[1]=='c' && isdigit(user_command[2])==false){
-        glob_buffer.append( STRING_WITH_LEN(" SHOW CREATE TABLE ") );
+        glob_buffer.append( STRING_WITH_LEN(" SHOW CREATE TABLE `") );
         glob_buffer.append( object_name, strlen(object_name) );
-        glob_buffer.append( STRING_WITH_LEN(";") );
+        glob_buffer.append( STRING_WITH_LEN("`;") );
     }
         //mysql> \\ts{table}
     else if(user_command[0]=='t' && user_command[1]=='s' && isdigit(user_command[2])==false){
