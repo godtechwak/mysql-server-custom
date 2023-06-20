@@ -5245,7 +5245,7 @@ static const char *construct_prompt() {
                     else {
                         if (strstr(prompt, "prod"))
                             printf("\033[0;31m"); //Red by silver
-                        else if (strstr(prompt, "dev") || strstr(prompt, "alpha"))
+                        else if (strstr(prompt, "dev") || strstr(prompt, "alpha")) 
                             printf("\033[0;33m"); //Yellow by silver
                         else
                             printf("\033[0;32m"); //Green by silver
@@ -5658,14 +5658,18 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
 		
             strcat(chosen_database, row[0]); //선택한 데이터베이스 받아오기
 
-            glob_buffer.append( STRING_WITH_LEN("  SELECT table_name, table_schema, SUM(index_length + data_length) AS index_data_size FROM information_schema.tables WHERE table_schema = '") );
+            glob_buffer.append( STRING_WITH_LEN(" SELECT A.table_name, A.table_schema, CASE WHEN LENGTH(A.index_data_size) > 3 AND LENGTH(A.index_data_size) < 7 THEN CONCAT(ROUND(A.index_data_size/1024, 2), '(KB)') WHEN LENGTH(A.index_data_size) > 6 AND LENGTH(A.index_data_size) < 10 THEN CONCAT(ROUND(A.index_data_size/1024/1024, 2), '(MB)') WHEN LENGTH(A.index_data_size) > 9 THEN CONCAT(ROUND(A.index_data_size/1024/1024/1024, 2), '(GB)') ELSE A.index_data_size END AS index_data_size FROM( SELECT table_name, table_schema, SUM(index_length + data_length) AS index_data_size FROM information_schema.tables WHERE table_schema = '") );
+            //glob_buffer.append( STRING_WITH_LEN("  SELECT table_name, table_schema, SUM(index_length + data_length) AS index_data_size FROM information_schema.tables WHERE table_schema = '") );
             glob_buffer.append( chosen_database, strlen(chosen_database) );
-            glob_buffer.append( STRING_WITH_LEN("' GROUP BY table_name ORDER BY SUM(index_length + data_length);") );
+            glob_buffer.append( STRING_WITH_LEN("' GROUP BY table_name ORDER BY index_data_size) AS A") );
+            //glob_buffer.append( STRING_WITH_LEN("' GROUP BY table_name ORDER BY SUM(index_length + data_length);") );
             mysql_free_result(result);
         }
             // dds
         else if(user_command[2]=='s' && isdigit(user_command[3])==false){
-            glob_buffer.append( STRING_WITH_LEN("  SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, SUM(index_length + data_length) AS index_data_size FROM information_schema.tables GROUP BY table_schema ORDER BY SUM(index_length + data_length);") );
+		    glob_buffer.append( STRING_WITH_LEN(" SELECT A.number, A.table_schema, CASE WHEN LENGTH(A.index_data_size) > 3 AND LENGTH(A.index_data_size) < 7 THEN CONCAT(ROUND(A.index_data_size/1024, 2), '(KB)') WHEN LENGTH(A.index_data_size) > 6 AND LENGTH(A.index_data_size) < 10 THEN CONCAT(ROUND(A.index_data_size/1024/1024, 2), '(MB)') WHEN LENGTH(A.index_data_size) > 9 THEN CONCAT(ROUND(A.index_data_size/1024/1024/1024, 2), '(GB)') ELSE A.index_data_size END AS index_data_size FROM( SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, SUM(index_length + data_length) AS index_data_size FROM information_schema.tables GROUP BY table_schema) AS A ORDER BY A.number, A.table_schema;") );
+            //glob_buffer.append( STRING_WITH_LEN("  SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, CASE WHEN LENGTH(SUM(index_length + data_length)) > 3 AND LENGTH(SUM(index_length + data_length)) < 7 THEN CONCAT(ROUND(SUM(index_length + data_length)/1024, 2), '(KB)') WHEN LENGTH(SUM(index_length + data_length)) > 6 AND LENGTH(SUM(index_length + data_length)) < 10 THEN CONCAT(ROUND(SUM(index_length + data_length)/1024/1024, 2), '(MB)') WHEN LENGTH(SUM(index_length + data_length)) > 9 THEN CONCAT(ROUND(SUM(index_length + data_length)/1024/1024/1024, 2), '(GB)') ELSE SUM(index_length + data_length)  END AS index_data_size FROM information_schema.tables GROUP BY table_schema ORDER BY SUM(index_length + data_length);") );
+			//glob_buffer.append( STRING_WITH_LEN("  SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, SUM(index_length + data_length) AS index_data_size FROM information_schema.tables GROUP BY table_schema ORDER BY SUM(index_length + data_length);") );
         }
     }
         //mysql> \\dd{number}
