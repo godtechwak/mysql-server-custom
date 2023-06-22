@@ -5602,24 +5602,31 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
     }
         //mysql> \\tt
     else if(user_command[0]=='t' && user_command[1]=='t'){
-        MYSQL_RES *res;
-        char chosen_database[100]="";
+        if (strlen(object_name) == 0){
+            MYSQL_RES *res;
+            char chosen_database[100]="";
 
-        my_free(current_db);
-        current_db = nullptr;
+            my_free(current_db);
+            current_db = nullptr;
 
-        mysql_query(&mysql, "SELECT IFNULL(DATABASE(), 'none')");
-        res = mysql_use_result(&mysql);
+            mysql_query(&mysql, "SELECT IFNULL(DATABASE(), 'none')");
+            res = mysql_use_result(&mysql);
 
-        MYSQL_ROW row = mysql_fetch_row(res);
-        strcat(chosen_database, row[0]); //현재 데이터베이스 받아오기
+            MYSQL_ROW row = mysql_fetch_row(res);
+            strcat(chosen_database, row[0]); //현재 데이터베이스 받아오기
 
-        current_db = my_strdup(PSI_NOT_INSTRUMENTED, chosen_database, MYF(MY_WME)); // 프롬프트에 Database 표시
-        mysql_free_result(res);
+            current_db = my_strdup(PSI_NOT_INSTRUMENTED, chosen_database, MYF(MY_WME)); // 프롬프트에 Database 표시
+            mysql_free_result(res);
 
-        glob_buffer.append( STRING_WITH_LEN("  SELECT row_number()over(order by table_name) AS number, table_name FROM INFORMATION_SCHEMA.TABLES WHERE table_schema = '") );
-        glob_buffer.append( chosen_database, strlen(chosen_database) );
-        glob_buffer.append( STRING_WITH_LEN("';") );
+            glob_buffer.append( STRING_WITH_LEN("  SELECT row_number()over(order by table_name) AS number, table_name FROM INFORMATION_SCHEMA.TABLES WHERE table_schema = '") );
+            glob_buffer.append( chosen_database, strlen(chosen_database) );
+            glob_buffer.append( STRING_WITH_LEN("';") );
+            }
+        else{
+            glob_buffer.append( STRING_WITH_LEN("  SHOW TABLES LIKE '%") );
+            glob_buffer.append( object_name, strlen(object_name) );
+            glob_buffer.append( STRING_WITH_LEN("%';") );
+        }
     }
         //mysql> \\dc
     else if(user_command[0]=='d' && user_command[1]=='c'){
