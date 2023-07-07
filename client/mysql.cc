@@ -5833,6 +5833,12 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         glob_buffer.append( object_name, strlen(object_name) );
         glob_buffer.append( STRING_WITH_LEN("%';") );
     }
+	//mysql> \\qq (quick query)
+    else if(user_command[0]=='q' && user_command[1]=='q'){
+	glob_buffer.append( STRING_WITH_LEN("  SELECT * FROM ") );
+	glob_buffer.append( object_name, strlen(object_name) );
+	glob_buffer.append( STRING_WITH_LEN("LIMIT 15;") );
+    }
         //mysql> \\aurora 
     else if(STRCMP(aurora_user_command, ==, "\\\\aurora")){
 	puts("connect to MySQL on Amazon RDS SQL reference...");
