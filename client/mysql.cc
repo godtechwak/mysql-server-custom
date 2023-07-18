@@ -5847,7 +5847,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         glob_buffer.append( STRING_WITH_LEN("  LIMIT 15;") );
     }
         //mysql> \\aurora 
-    else if(STRCMP(aurora_user_command, ==, "\\\\aurora")){
+    else if(STRCMP(full_user_command, ==, "\\\\aurora")){
 	puts("connect to MySQL on Amazon RDS SQL reference...");
         system("open https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Appendix.MySQL.SQLRef.html");
     }
