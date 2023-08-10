@@ -5827,6 +5827,12 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         glob_buffer.append( object_name, strlen(object_name) );
         glob_buffer.append( STRING_WITH_LEN("%';") );
     }
+        //mysql> \\gs
+    else if(user_command[0]=='g' && user_command[1]=='s'){
+        glob_buffer.append( STRING_WITH_LEN("  SHOW GLOBAL STATUS LIKE '%") );
+        glob_buffer.append( object_name, strlen(object_name) );
+        glob_buffer.append( STRING_WITH_LEN("%';") );
+    }
         //mysql> \\ss
     else if(user_command[0]=='s' && user_command[1]=='s'){
         glob_buffer.append( STRING_WITH_LEN("  SHOW SESSION STATUS LIKE '%") );
