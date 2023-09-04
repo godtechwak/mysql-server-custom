@@ -5821,6 +5821,12 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
     else if(user_command[0]=='u' && user_command[1]=='u'){
         glob_buffer.append( STRING_WITH_LEN("  SELECT A.number, A.user, A.host FROM (SELECT row_number()over(order by host) AS number, user, host FROM mysql.user WHERE user NOT IN ('mysql.infoschema', 'mysql.session', 'mysql.sys')) AS A;"));
     }
+        //mysql> \\sv
+    else if(user_command[0]=='s' && user_command[1]=='v'){
+        glob_buffer.append( STRING_WITH_LEN("  SHOW SESSION VARIABLES LIKE '%") );
+        glob_buffer.append( object_name, strlen(object_name) );
+        glob_buffer.append( STRING_WITH_LEN("%';") );
+    }
         //mysql> \\vv
     else if(user_command[0]=='v' && user_command[1]=='v'){
         glob_buffer.append( STRING_WITH_LEN("  SHOW GLOBAL VARIABLES LIKE '%") );
