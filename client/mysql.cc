@@ -1253,16 +1253,19 @@ BOOL windows_ctrl_handler(DWORD fdwCtrlType) {
 int main(int argc, char *argv[]) {
     char buff[80];
 
-    MY_INIT(argv[0]);
+    /* argv[0]는 mysql 실행 파일 경로 (ex: /usr/local/mysql/bin/mysql)
+    MY_INIT 전처리문은 my_sys.h 헤더파일에 정의되어 있다.
+    writed by silver */
+    MY_INIT(argv[0]); 
     DBUG_TRACE;
     DBUG_PROCESS(argv[0]);
 
     charset_index = get_command_index('C');
     delimiter_index = get_command_index('d');
-    delimiter_str = delimiter;
+    delimiter_str = delimiter; //전처리문에서 세미콜론이 기본값으로 사용됨 writed by silver
     default_prompt = my_strdup(
             PSI_NOT_INSTRUMENTED,
-            getenv("MYSQL_PS1") ? getenv("MYSQL_PS1") : "mysql> ", MYF(MY_WME));
+            getenv("MYSQL_PS1") ? getenv("MYSQL_PS1") : "mysql> ", MYF(MY_WME)); // 기본 프롬프트는 "mysql>"" 이다. writed by silver
     current_prompt = my_strdup(PSI_NOT_INSTRUMENTED, default_prompt, MYF(MY_WME));
     prompt_counter = 0;
 
@@ -2266,7 +2269,7 @@ static int read_and_execute(bool interactive) {
         free the previous entered line.
       */
             if (line) free(line);
-            line = readline(prompt);
+            line = readline(prompt); //프롬프트의 입력을 받는다. writed by silver
 
             if (sigint_received) {
                 sigint_received = false;
@@ -3076,7 +3079,8 @@ static bool get_current_db() {
 
 static int mysql_real_query_for_lazy(const char *buf, size_t length,
                                      bool set_params = false) {
-    int error = 0;
+    int error = 0;    
+    
     for (uint retry = 0;; retry++) {
         error = 0;
 
@@ -3322,6 +3326,7 @@ static int com_go(String *buffer, char *line [[maybe_unused]]) {
 
     timer = start_timer();
     executing_query = true;
+
     error = mysql_real_query_for_lazy(buffer->ptr(), buffer->length(), true);
 
     if (status.add_to_history) {
@@ -5602,8 +5607,8 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
     }
         //mysql> \\tt
     else if(user_command[0]=='t' && user_command[1]=='t'){
-        if (strlen(object_name) == 0){
-            MYSQL_RES *res;
+		if (strlen(object_name) == 0){
+		    MYSQL_RES *res;
             char chosen_database[100]="";
 
             my_free(current_db);
@@ -5621,12 +5626,12 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
             glob_buffer.append( STRING_WITH_LEN("  SELECT row_number()over(order by table_name) AS number, table_name FROM INFORMATION_SCHEMA.TABLES WHERE table_schema = '") );
             glob_buffer.append( chosen_database, strlen(chosen_database) );
             glob_buffer.append( STRING_WITH_LEN("';") );
-            }
-        else{
+			}
+		else{
             glob_buffer.append( STRING_WITH_LEN("  SHOW TABLES LIKE '%") );
-            glob_buffer.append( object_name, strlen(object_name) );
-            glob_buffer.append( STRING_WITH_LEN("%';") );
-        }
+			glob_buffer.append( object_name, strlen(object_name) );
+			glob_buffer.append( STRING_WITH_LEN("%';") );
+		} 
     }
         //mysql> \\dc
     else if(user_command[0]=='d' && user_command[1]=='c'){
@@ -5665,16 +5670,20 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
 		
             strcat(chosen_database, row[0]); //선택한 데이터베이스 받아오기
 
-            glob_buffer.append( STRING_WITH_LEN(" SELECT A.table_name, A.table_schema, CASE WHEN LENGTH(A.index_data_size) > 3 AND LENGTH(A.index_data_size) < 7 THEN CONCAT(ROUND(A.index_data_size/1024, 2), '(KB)') WHEN LENGTH(A.index_data_size) > 6 AND LENGTH(A.index_data_size) < 10 THEN CONCAT(ROUND(A.index_data_size/1024/1024, 2), '(MB)') WHEN LENGTH(A.index_data_size) > 9 THEN CONCAT(ROUND(A.index_data_size/1024/1024/1024, 2), '(GB)') ELSE A.index_data_size END AS index_data_size, A.table_rows FROM( SELECT table_name, table_schema, SUM(index_length + data_length) AS index_data_size, MAX(table_rows) AS table_rows FROM information_schema.tables WHERE table_schema = '") );
+            glob_buffer.append( STRING_WITH_LEN(" SELECT A.table_name, A.table_schema, CASE WHEN LENGTH(A.index_data_size) > 3 AND LENGTH(A.index_data_size) < 7 THEN CONCAT(ROUND(A.index_data_size/1024, 2), '(KB)') WHEN LENGTH(A.index_data_size) > 6 AND LENGTH(A.index_data_size) < 10 THEN CONCAT(ROUND(A.index_data_size/1024/1024, 2), '(MB)') WHEN LENGTH(A.index_data_size) > 9 THEN CONCAT(ROUND(A.index_data_size/1024/1024/1024, 2), '(GB)') ELSE A.index_data_size END AS index_data_size, concat(case when 10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10)) != 0 then concat(repeat('+', (A.index_data_size/total_size*100)/10), repeat('_', (10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10))))) else repeat('+', (A.index_data_size/total_size*100)/10) end, '(', round((A.index_data_size/total_size*100), 1), '%)') as 'Percentage(%)', A.table_rows FROM( SELECT table_name, table_schema, SUM(index_length + data_length) AS index_data_size, MAX(table_rows) AS table_rows, (SELECT SUM(index_length + data_length) FROM information_schema.tables WHERE table_schema = '") );
+            //glob_buffer.append( STRING_WITH_LEN(" SELECT A.table_name, A.table_schema, CASE WHEN LENGTH(A.index_data_size) > 3 AND LENGTH(A.index_data_size) < 7 THEN CONCAT(ROUND(A.index_data_size/1024, 2), '(KB)') WHEN LENGTH(A.index_data_size) > 6 AND LENGTH(A.index_data_size) < 10 THEN CONCAT(ROUND(A.index_data_size/1024/1024, 2), '(MB)') WHEN LENGTH(A.index_data_size) > 9 THEN CONCAT(ROUND(A.index_data_size/1024/1024/1024, 2), '(GB)') ELSE A.index_data_size END AS index_data_size, A.table_rows FROM( SELECT table_name, table_schema, SUM(index_length + data_length) AS index_data_size, MAX(table_rows) AS table_rows FROM information_schema.tables WHERE table_schema = '") );
             //glob_buffer.append( STRING_WITH_LEN("  SELECT table_name, table_schema, SUM(index_length + data_length) AS index_data_size FROM information_schema.tables WHERE table_schema = '") );
             glob_buffer.append( chosen_database, strlen(chosen_database) );
+            glob_buffer.append( STRING_WITH_LEN("' ) AS total_size FROM information_schema.tables WHERE table_schema = '") );
+            glob_buffer.append( chosen_database, strlen(chosen_database) );
             glob_buffer.append( STRING_WITH_LEN("' GROUP BY table_name ORDER BY index_data_size) AS A") );
+            //glob_buffer.append( STRING_WITH_LEN("' GROUP BY table_name ORDER BY index_data_size) AS A") );
             //glob_buffer.append( STRING_WITH_LEN("' GROUP BY table_name ORDER BY SUM(index_length + data_length);") );
             mysql_free_result(result);
         }
             // dds
         else if(user_command[2]=='s' && isdigit(user_command[3])==false){
-		    glob_buffer.append( STRING_WITH_LEN(" SELECT A.number, A.table_schema, CASE WHEN LENGTH(A.index_data_size) > 3 AND LENGTH(A.index_data_size) < 7 THEN CONCAT(ROUND(A.index_data_size/1024, 2), '(KB)') WHEN LENGTH(A.index_data_size) > 6 AND LENGTH(A.index_data_size) < 10 THEN CONCAT(ROUND(A.index_data_size/1024/1024, 2), '(MB)') WHEN LENGTH(A.index_data_size) > 9 THEN CONCAT(ROUND(A.index_data_size/1024/1024/1024, 2), '(GB)') ELSE A.index_data_size END AS index_data_size FROM( SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, SUM(index_length + data_length) AS index_data_size FROM information_schema.tables GROUP BY table_schema) AS A ORDER BY A.number, A.table_schema;") );
+		    glob_buffer.append( STRING_WITH_LEN(" SELECT A.number, A.table_schema, CASE WHEN LENGTH(A.index_data_size) > 3 AND LENGTH(A.index_data_size) < 7 THEN CONCAT(ROUND(A.index_data_size/1024, 2), '(KB)') WHEN LENGTH(A.index_data_size) > 6 AND LENGTH(A.index_data_size) < 10 THEN CONCAT(ROUND(A.index_data_size/1024/1024, 2), '(MB)') WHEN LENGTH(A.index_data_size) > 9 THEN CONCAT(ROUND(A.index_data_size/1024/1024/1024, 2), '(GB)') ELSE A.index_data_size END AS index_data_size, concat(case when 10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10)) != 0 then concat(repeat('+', (A.index_data_size/total_size*100)/10), repeat('_', (10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10))))) else repeat('+', (A.index_data_size/total_size*100)/10) end, '(', round((A.index_data_size/total_size*100), 1), '%)') as 'Percentage(%)' FROM( SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, SUM(index_length + data_length) AS index_data_size, (SELECT SUM(index_length + data_length) FROM information_schema.tables) AS total_size FROM information_schema.tables GROUP BY table_schema) AS A ORDER BY A.number, A.table_schema;") );
             //glob_buffer.append( STRING_WITH_LEN("  SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, CASE WHEN LENGTH(SUM(index_length + data_length)) > 3 AND LENGTH(SUM(index_length + data_length)) < 7 THEN CONCAT(ROUND(SUM(index_length + data_length)/1024, 2), '(KB)') WHEN LENGTH(SUM(index_length + data_length)) > 6 AND LENGTH(SUM(index_length + data_length)) < 10 THEN CONCAT(ROUND(SUM(index_length + data_length)/1024/1024, 2), '(MB)') WHEN LENGTH(SUM(index_length + data_length)) > 9 THEN CONCAT(ROUND(SUM(index_length + data_length)/1024/1024/1024, 2), '(GB)') ELSE SUM(index_length + data_length)  END AS index_data_size FROM information_schema.tables GROUP BY table_schema ORDER BY SUM(index_length + data_length);") );
 			//glob_buffer.append( STRING_WITH_LEN("  SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, SUM(index_length + data_length) AS index_data_size FROM information_schema.tables GROUP BY table_schema ORDER BY SUM(index_length + data_length);") );
         }
@@ -5821,7 +5830,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
     else if(user_command[0]=='u' && user_command[1]=='u'){
         glob_buffer.append( STRING_WITH_LEN("  SELECT A.number, A.user, A.host FROM (SELECT row_number()over(order by host) AS number, user, host FROM mysql.user WHERE user NOT IN ('mysql.infoschema', 'mysql.session', 'mysql.sys')) AS A;"));
     }
-        //mysql> \\sv
+		//mysql> \\sv
     else if(user_command[0]=='s' && user_command[1]=='v'){
         glob_buffer.append( STRING_WITH_LEN("  SHOW SESSION VARIABLES LIKE '%") );
         glob_buffer.append( object_name, strlen(object_name) );
@@ -5833,7 +5842,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         glob_buffer.append( object_name, strlen(object_name) );
         glob_buffer.append( STRING_WITH_LEN("%';") );
     }
-        //mysql> \\gs
+	//mysql> \\gs
     else if(user_command[0]=='g' && user_command[1]=='s'){
         glob_buffer.append( STRING_WITH_LEN("  SHOW GLOBAL STATUS LIKE '%") );
         glob_buffer.append( object_name, strlen(object_name) );
@@ -5845,38 +5854,41 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         glob_buffer.append( object_name, strlen(object_name) );
         glob_buffer.append( STRING_WITH_LEN("%';") );
     }
-	//mysql> \\qq
+		//mysql> \\qq (quick query)
     else if(user_command[0]=='q' && user_command[1]=='q'){
-            //mysql> \\qqg
-	if(user_command[2]=='g'){
-            vertical = true;
-            glob_buffer.append( STRING_WITH_LEN("  SELECT * FROM ") );
-            glob_buffer.append( object_name, strlen(object_name) );
-            glob_buffer.append( STRING_WITH_LEN("  LIMIT 15;") );
-        }
-        glob_buffer.append( STRING_WITH_LEN("  SELECT * FROM ") );
-        glob_buffer.append( object_name, strlen(object_name) );
-        glob_buffer.append( STRING_WITH_LEN("  LIMIT 15;") );
+		if(user_command[2]=='g'){
+			vertical = true;
+			glob_buffer.append( STRING_WITH_LEN("  SELECT * FROM ") );
+       		glob_buffer.append( object_name, strlen(object_name) );
+        	glob_buffer.append( STRING_WITH_LEN("  LIMIT 15;") );	
+		}
+		glob_buffer.append( STRING_WITH_LEN("  SELECT * FROM ") );
+		glob_buffer.append( object_name, strlen(object_name) );
+		glob_buffer.append( STRING_WITH_LEN("  LIMIT 15;") );
     }
         //mysql> \\aurora 
     else if(STRCMP(full_user_command, ==, "\\\\aurora")){
 	puts("connect to MySQL on Amazon RDS SQL reference...");
         system("open https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Appendix.MySQL.SQLRef.html");
     }
-	//mysql> \\aurorakill
-    else if(STRCMP(full_user_command, ==, "\\\\aurorakill")){
-    	puts("===================================================================================================================================");
-    	puts("pager sed 's/|//g'; select concat('CALL mysql.rds_kill(',id,');') from information_schema.processlist where user='{user}'; nopager;");
-    	puts("===================================================================================================================================");
-    }
-        //mysql> \\kill
-    else if(STRCMP(full_user_command, ==, "\\\\kill")){
-    	puts("===================================================================================================================");
-    	puts("pager sed 's/|//g'; select concat('kill ',id,';') from information_schema.processlist where user='{user}'; nopager;");
-    	puts("===================================================================================================================");
-    }
+		//mysql> \\aurorakill
+	else if(STRCMP(full_user_command, ==, "\\\\aurorakill")){
+	puts("┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐");
+	puts("│ Kill connection query for Aurora MySQL                                                                                              │");
+	puts("├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤");
+	puts("│ pager sed 's/|//g'; select concat('CALL mysql.rds_kill(',id,');') from information_schema.processlist where user='{user}'; nopager; │");
+	puts("└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘");
+	}
+		//mysql> \\kill
+	else if(STRCMP(full_user_command, ==, "\\\\kill")){
+	puts("┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐");
+	puts("│ Kill connection query for MySQL                                                                                     │");
+	puts("├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤");
+	puts("│ pager sed 's/|//g'; select concat('kill ',id,';') from information_schema.processlist where user='{user}'; nopager; │");
+	puts("└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘");
+	}
     else{
-        return put_info("Unknown command\n\n>> Usage ::\n   =========================================================\n     USER (name)\n     dd             : SHOW DATABASEs\n     dd?            : USE {database}\n     dc             : SHOW CREATE DATABASE (name)\n     tt             : SHOW TABLEs\n     tc             : SHOW CREATE TABLE (name)\n     ps             : SHOW PROCESSLIST\n     uu             : SHOW USER & HOST\n     \n   =========================================================", INFO_ERROR, 0);
+        return put_info("Unknown command\n\n>> Usage ::\n   ─────────────────────────────────────────────────────────\n     dd             : SHOW DATABASEs\n     dd?            : USE {database}\n     dc             : SHOW CREATE DATABASE (name)\n     tt             : SHOW TABLEs\n     tc             : SHOW CREATE TABLE (name)\n     ps             : SHOW PROCESSLIST\n     uu             : SHOW USER & HOST\n     \n   ─────────────────────────────────────────────────────────", INFO_ERROR, 0);
     }
     int rtn=0;
 
