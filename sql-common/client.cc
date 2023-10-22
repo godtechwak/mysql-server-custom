@@ -143,6 +143,7 @@
 using std::string;
 using std::swap;
 
+//by silver
 struct ConnInfoSub {
     const char* host;
     const char* user;
