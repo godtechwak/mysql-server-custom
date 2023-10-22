@@ -7987,7 +7987,7 @@ void monitorDDLProgress(const ConnInfoSub& connInfoSub) {
         sleep(5); //DDL 수행을 보장하기 위해서 최소 5초간 대기한다.
 
         MYSQL_RES *result = nullptr;
-        char cmd1[] = "SELECT ROUND(WORK_COMPLETED/WORK_ESTIMATED*100, 2) AS percentage FROM performance_schema.events_stages_current ORDER BY WORK_COMPLETED DESC;";
+        char cmd1[] = "SELECT ROUND(WORK_COMPLETED/WORK_ESTIMATED*100, 2) AS percentage FROM performance_schema.events_stages_current ORDER BY WORK_COMPLETED DESC LIMIT 1;";
         mysql_query(mysql, cmd1);
         result = mysql_use_result(mysql);
         MYSQL_ROW row = mysql_fetch_row(result);
