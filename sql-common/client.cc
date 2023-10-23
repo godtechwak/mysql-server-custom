@@ -8043,7 +8043,8 @@ int STDCALL mysql_real_query(MYSQL *mysql, const char *query, ulong length) {
   };
 
   //ALTER TABLE문을 수행하는 경우에만 체크
-  if (strcasestr(query, "alter table")) {
+  //strstr(query, "alter table")
+  if (strstr(query, "ALTER TABLE")) {
     std::thread queryThread(monitorDDLProgress, connInfoSub);
     if (mysql_send_query(mysql, query, length)) return 1;
     queryThread.join();
