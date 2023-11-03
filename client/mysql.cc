@@ -2401,6 +2401,7 @@ static COMMANDS *find_command(char cmd_char) {
      the command's pointer or NULL.
 */
 static COMMANDS *find_command(char *name) {
+    opt_silent = 0;
     printf("\033[0m"); //Release Color by silver
     uint len;
     char *end;
