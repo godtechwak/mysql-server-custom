@@ -5513,6 +5513,16 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
     // Run command
     //mysql> \\tc{number}
     if(user_command[0]=='t' && user_command[1]=='c' && isdigit(user_command[2])==true){
+        if (user_command[4] != '\0') {
+            puts("Not supported..\n");
+            return 0;
+        }
+
+        if (isdigit(user_command[2]) && isalpha(user_command[3])) {
+            puts("Not supported..\n");
+            return 0;
+        }
+        
         if (user_command[2] == '0') {
             return 0;
         }
@@ -5573,6 +5583,16 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
     }
     //mysql> \\ts{number}
     else if(user_command[0]=='t' && user_command[1]=='s' && isdigit(user_command[2])==true){
+        if (user_command[4] != '\0') {
+            puts("Not supported..\n");
+            return 0;
+        }
+
+        if (isdigit(user_command[2]) && isalpha(user_command[3])) {
+            puts("Not supported..\n");
+            return 0;
+        }
+        
         if (user_command[2] == '0'){
             return 0;
         }
@@ -5659,7 +5679,17 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
     //mysql> \\dds
     else if(user_command[0]=='d' && user_command[1]=='d' && user_command[2]=='s'){
         // mysql> \\dds{number}
-        if (user_command[2]=='s' && isdigit(user_command[3])==true){
+        if (user_command[5] != '\0') {
+            puts("Not supported..\n");
+            return 0;
+        }
+
+        if (isdigit(user_command[3]) && isalpha(user_command[4])) {
+            puts("Not supported..\n");
+            return 0;
+        }
+
+        if (isdigit(user_command[3])==true){            
             if (user_command[3] == '0'){
                 return 0;
             }
@@ -5691,12 +5721,22 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
             mysql_free_result(result);
         }
         // mysql> \\dds
-        else if(user_command[2]=='s' && isdigit(user_command[3])==false){
+        else if(isdigit(user_command[3])==false){
 		    glob_buffer.append( STRING_WITH_LEN(" SELECT A.number, A.table_schema, CASE WHEN LENGTH(A.index_data_size) > 3 AND LENGTH(A.index_data_size) < 7 THEN CONCAT(ROUND(A.index_data_size/1024, 2), '(KB)') WHEN LENGTH(A.index_data_size) > 6 AND LENGTH(A.index_data_size) < 10 THEN CONCAT(ROUND(A.index_data_size/1024/1024, 2), '(MB)') WHEN LENGTH(A.index_data_size) > 9 THEN CONCAT(ROUND(A.index_data_size/1024/1024/1024, 2), '(GB)') ELSE A.index_data_size END AS index_data_size, concat(case when 10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10)) != 0 then concat(repeat('+', (A.index_data_size/total_size*100)/10), repeat('_', (10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10))))) else repeat('+', (A.index_data_size/total_size*100)/10) end, '(', round((A.index_data_size/total_size*100), 1), '%)') as 'Percentage(%)' FROM( SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, SUM(index_length + data_length) AS index_data_size, (SELECT SUM(index_length + data_length) FROM information_schema.tables) AS total_size FROM information_schema.tables GROUP BY table_schema) AS A ORDER BY A.number, A.table_schema;") );
         }
     }
     //mysql> \\dd{number}
     else if(user_command[0]=='d' && user_command[1]=='d' && isdigit(user_command[2])==true){
+        if (user_command[4] != '\0') {
+            puts("Not supported..\n");
+            return 0;
+        }
+
+        if (isdigit(user_command[2]) && isalpha(user_command[3])) {
+            puts("Not supported..\n");
+            return 0;
+        }
+        
         //int num_fields;
         MYSQL_RES *result=nullptr;
         //MYSQL_FIELD *field;
@@ -5735,8 +5775,18 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
     }
     //mysql> \\uuc
     else if(user_command[0]=='u' && user_command[1]=='u' && user_command[2]=='c'){
-        // mysql> \\uuc{user_number}
-        if (user_command[2]=='c' && isdigit(user_command[3])==true){
+        // mysql> \\uuc{user_number}        
+        if (user_command[5] != '\0') {
+            puts("Not supported..\n");
+            return 0;
+        }
+
+        if (isdigit(user_command[3]) && isalpha(user_command[4])) {
+            puts("Not supported..\n");
+            return 0;
+        }
+
+        if (isdigit(user_command[3])==true){
             if (user_command[3] == '0'){
                 return 0;
             }
@@ -5758,7 +5808,6 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
 	        puts("User not exist\n");
 	        return 0;
 	    }
-
             strcat(chosen_user, row[1]); // 선택한 유저 받아오기
             strcat(chosen_host, row[2]); // 선택한 유저 받아오기
             
@@ -5771,7 +5820,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
 
         }
         // mysql> \\uuc
-        else if (user_command[2]=='c' && isdigit(user_command[3])==false){
+        else if (isdigit(user_command[3])==false){
             glob_buffer.append( STRING_WITH_LEN("  SELECT A.number, A.user, A.host FROM (SELECT row_number()over(order by host) AS number, user, host FROM mysql.user WHERE user NOT IN ('mysql.infoschema', 'mysql.session', 'mysql.sys')) AS A;"));
         }
         
@@ -5779,7 +5828,17 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
     //mysql> \\uug
     else if(user_command[0]=='u' && user_command[1]=='u' && user_command[2]=='g'){
         // mysql> uug{user_number}
-        if (user_command[2]=='g' && isdigit(user_command[3])==true){
+        if (user_command[5] != '\0') {
+            puts("Not supported..\n");
+            return 0;
+        }
+
+        if (isdigit(user_command[3]) && isalpha(user_command[4])) {
+            puts("Not supported..\n");
+            return 0;
+        }
+
+        if (isdigit(user_command[3])==true){
             if (user_command[3] == '0'){
                 return 0;
             }
@@ -5814,7 +5873,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
 
         }
         // mysql> \\uug
-        else if (user_command[2]=='s' && isdigit(user_command[3])==false){
+        else if (isdigit(user_command[3])==false){
             glob_buffer.append( STRING_WITH_LEN("  SELECT A.number, A.user, A.host FROM (SELECT row_number()over(order by host) AS number, user, host FROM mysql.user WHERE user NOT IN ('mysql.infoschema', 'mysql.session', 'mysql.sys')) AS A;"));
         }
     }
