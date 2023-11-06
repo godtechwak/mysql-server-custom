@@ -3404,7 +3404,7 @@ static int com_go(String *buffer, char *line [[maybe_unused]]) {
                     print_table_data_vertically(result);
                 }
                 else if (opt_silent && verbose <= 2 && !output_tables) {
-                    printf("This is opt_silent");
+                    //printf("This is opt_silent");
                     print_tab_data(result);
                 }
                 else {
