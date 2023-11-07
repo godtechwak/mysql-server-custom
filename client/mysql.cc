@@ -5674,7 +5674,47 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
     }
     //mysql> \\dd
     else if(user_command[0]=='d' && user_command[1]=='d' && user_command[2]==0){
-	glob_buffer.append( STRING_WITH_LEN("  SELECT row_number()over(order by schema_name) AS number, schema_name FROM INFORMATION_SCHEMA.SCHEMATA;") );
+	    glob_buffer.append( STRING_WITH_LEN("  SELECT row_number()over(order by schema_name) AS number, schema_name FROM INFORMATION_SCHEMA.SCHEMATA;") );
+    }
+    //mysql> \\dd{number}
+    else if(user_command[0]=='d' && user_command[1]=='d' && isdigit(user_command[2])==true){
+        if (user_command[4] != '\0') {
+            puts("Not supported..\n");
+            return 0;
+        }
+
+        if (isdigit(user_command[2]) && isalpha(user_command[3])) {
+            puts("Not supported..\n");
+            return 0;
+        }
+        
+        //int num_fields;
+        MYSQL_RES *result=nullptr;
+        //MYSQL_FIELD *field;
+        char cmd1[]="SELECT A.schema_name FROM (SELECT row_number()over(order by schema_name) AS number, schema_name FROM INFORMATION_SCHEMA.SCHEMATA) AS A WHERE A.number = ";
+        char cmd2[3]={user_command[2], user_command[3]}; //{데이터베이스, 세미콜론}
+        char chosen_database[100]="";
+
+        strcat(cmd1, cmd2);
+        strcat(cmd1, ";");
+
+        mysql_query(&mysql, cmd1);
+        result = mysql_use_result(&mysql);
+        MYSQL_ROW row = mysql_fetch_row(result);
+	
+	if (row == NULL) {
+	    puts("Database not exist\n");
+	    return 0;
+	}
+	    
+        strcat(chosen_database, row[0]); //선택한 데이터베이스 받아오기
+
+        mysql_free_result(result);
+
+        current_db = my_strdup(PSI_NOT_INSTRUMENTED, chosen_database, MYF(MY_WME)); // 프롬프트에 Database 표시
+
+        glob_buffer.append( STRING_WITH_LEN("  USE ") );
+        glob_buffer.append( chosen_database, strlen(chosen_database) );
     }
     //mysql> \\dds
     else if(user_command[0]=='d' && user_command[1]=='d' && user_command[2]=='s'){
@@ -5724,45 +5764,6 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         else if(isdigit(user_command[3])==false){
 		    glob_buffer.append( STRING_WITH_LEN(" SELECT A.number, A.table_schema, CASE WHEN LENGTH(A.index_data_size) > 3 AND LENGTH(A.index_data_size) < 7 THEN CONCAT(ROUND(A.index_data_size/1024, 2), '(KB)') WHEN LENGTH(A.index_data_size) > 6 AND LENGTH(A.index_data_size) < 10 THEN CONCAT(ROUND(A.index_data_size/1024/1024, 2), '(MB)') WHEN LENGTH(A.index_data_size) > 9 THEN CONCAT(ROUND(A.index_data_size/1024/1024/1024, 2), '(GB)') ELSE A.index_data_size END AS index_data_size, concat(case when 10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10)) != 0 then concat(repeat('+', (A.index_data_size/total_size*100)/10), repeat('_', (10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10))))) else repeat('+', (A.index_data_size/total_size*100)/10) end, '(', round((A.index_data_size/total_size*100), 1), '%)') as 'Percentage(%)' FROM( SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, SUM(index_length + data_length) AS index_data_size, (SELECT SUM(index_length + data_length) FROM information_schema.tables) AS total_size FROM information_schema.tables GROUP BY table_schema) AS A ORDER BY A.number, A.table_schema;") );
         }
-    }
-    //mysql> \\dd{number}
-    else if(user_command[0]=='d' && user_command[1]=='d' && isdigit(user_command[2])==true){
-        if (user_command[4] != '\0') {
-            puts("Not supported..\n");
-            return 0;
-        }
-
-        if (isdigit(user_command[2]) && isalpha(user_command[3])) {
-            puts("Not supported..\n");
-            return 0;
-        }
-        
-        //int num_fields;
-        MYSQL_RES *result=nullptr;
-        //MYSQL_FIELD *field;
-        char cmd1[]="SELECT A.schema_name FROM (SELECT row_number()over(order by schema_name) AS number, schema_name FROM INFORMATION_SCHEMA.SCHEMATA) AS A WHERE A.number = ";
-        char cmd2[3]={user_command[2], user_command[3], ';'}; //{데이터베이스, 세미콜론}
-        char chosen_database[100]="";
-
-        strcat(cmd1, cmd2);
-
-        mysql_query(&mysql, cmd1);
-        result = mysql_use_result(&mysql);
-        MYSQL_ROW row = mysql_fetch_row(result);
-	
-	if (row == NULL) {
-	    puts("Database not exist\n");
-	    return 0;
-	}
-	    
-        strcat(chosen_database, row[0]); //선택한 데이터베이스 받아오기
-
-        mysql_free_result(result);
-
-        current_db = my_strdup(PSI_NOT_INSTRUMENTED, chosen_database, MYF(MY_WME)); // 프롬프트에 Database 표시
-
-        glob_buffer.append( STRING_WITH_LEN("  USE ") );
-        glob_buffer.append( chosen_database, strlen(chosen_database) );
     }
     //mysql> \\ps
     else if(user_command[0]=='p' && user_command[1]=='s'){
