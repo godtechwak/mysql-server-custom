@@ -5718,7 +5718,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
             MYSQL_RES *result=nullptr;
             char chosen_database[100]="";
 
-            char cmd1[1000]="SELECT A.table_schema FROM (SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, sys.format_bytes(SUM(index_length + data_length)) AS index_data_size FROM information_schema.tables GROUP BY table_schema ORDER BY SUM(index_length + data_length)) AS A WHERE A.number = ";
+            char cmd1[1000]="SELECT A.table_schema FROM (SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, format_bytes(SUM(index_length + data_length)) AS index_data_size FROM information_schema.tables GROUP BY table_schema ORDER BY SUM(index_length + data_length)) AS A WHERE A.number = ";
             char cmd2[4]={user_command[3], user_command[4]}; //{테이블 1의 자리, 테이블 10의 자리}
 
             strcat(cmd1, cmd2);
@@ -5735,7 +5735,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
 		
             strcat(chosen_database, row[0]); //선택한 데이터베이스 받아오기
 
-            glob_buffer.append( STRING_WITH_LEN(" SELECT A.table_name, A.table_schema, sys.format_bytes(index_data_size) AS index_data_size, concat(case when 10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10)) != 0 then concat(repeat('+', (A.index_data_size/total_size*100)/10), repeat('_', (10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10))))) else repeat('+', (A.index_data_size/total_size*100)/10) end, '(', round((A.index_data_size/total_size*100), 1), '%)') as 'Percentage(%)', FORMAT(A.table_rows, 0) AS table_rows FROM( SELECT table_name, table_schema, SUM(index_length + data_length) AS index_data_size, MAX(table_rows) AS table_rows, (SELECT SUM(index_length + data_length) FROM information_schema.tables WHERE table_schema = '") );
+            glob_buffer.append( STRING_WITH_LEN(" SELECT A.table_name, A.table_schema, format_bytes(index_data_size) AS index_data_size, concat(case when 10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10)) != 0 then concat(repeat('+', (A.index_data_size/total_size*100)/10), repeat('_', (10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10))))) else repeat('+', (A.index_data_size/total_size*100)/10) end, '(', round((A.index_data_size/total_size*100), 1), '%)') as 'Percentage(%)', FORMAT(A.table_rows, 0) AS table_rows FROM( SELECT table_name, table_schema, SUM(index_length + data_length) AS index_data_size, MAX(table_rows) AS table_rows, (SELECT SUM(index_length + data_length) FROM information_schema.tables WHERE table_schema = '") );
             glob_buffer.append( chosen_database, strlen(chosen_database) );
             glob_buffer.append( STRING_WITH_LEN("' ) AS total_size FROM information_schema.tables WHERE table_schema = '") );
             glob_buffer.append( chosen_database, strlen(chosen_database) );
@@ -5744,7 +5744,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         }
         // mysql> \\dds
         else if(isdigit(user_command[3])==false){
-		    glob_buffer.append( STRING_WITH_LEN(" SELECT A.number, A.table_schema, sys.format_bytes(index_data_size) AS index_data_size, concat(case when 10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10)) != 0 then concat(repeat('+', (A.index_data_size/total_size*100)/10), repeat('_', (10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10))))) else repeat('+', (A.index_data_size/total_size*100)/10) end, '(', round((A.index_data_size/total_size*100), 1), '%)') as 'Percentage(%)' FROM( SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, SUM(index_length + data_length) AS index_data_size, (SELECT SUM(index_length + data_length) FROM information_schema.tables) AS total_size FROM information_schema.tables GROUP BY table_schema) AS A ORDER BY A.number, A.table_schema;") );
+		    glob_buffer.append( STRING_WITH_LEN(" SELECT A.number, A.table_schema, format_bytes(index_data_size) AS index_data_size, concat(case when 10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10)) != 0 then concat(repeat('+', (A.index_data_size/total_size*100)/10), repeat('_', (10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10))))) else repeat('+', (A.index_data_size/total_size*100)/10) end, '(', round((A.index_data_size/total_size*100), 1), '%)') as 'Percentage(%)' FROM( SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, SUM(index_length + data_length) AS index_data_size, (SELECT SUM(index_length + data_length) FROM information_schema.tables) AS total_size FROM information_schema.tables GROUP BY table_schema) AS A ORDER BY A.number, A.table_schema;") );
         }
     }
     //mysql> \\ps
@@ -5870,8 +5870,8 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         glob_buffer.append( object_name, strlen(object_name) );
         glob_buffer.append( STRING_WITH_LEN("%';") );
     }
-    //mysql> \\vv
-    else if(user_command[0]=='v' && user_command[1]=='v'){
+    //mysql> \\gv
+    else if(user_command[0]=='g' && user_command[1]=='v'){
         glob_buffer.append( STRING_WITH_LEN("  SHOW GLOBAL VARIABLES LIKE '%") );
         glob_buffer.append( object_name, strlen(object_name) );
         glob_buffer.append( STRING_WITH_LEN("%';") );
@@ -5907,7 +5907,14 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
             glob_buffer.append( &user_command[3], 1 );
         } 
     }
-    
+    //mysql> \\ml{limit}
+    else if(user_command[0]=='m' && user_command[1]=='l'){
+		glob_buffer.append( STRING_WITH_LEN("  SELECT owner_thread_id, object_type, COLUMN_NAME, object_name, lock_type, lock_duration, lock_status FROM performance_schema.metadata_locks;")); 
+    }
+    //mysql> \\dl{limit}
+    else if(user_command[0]=='d' && user_command[1]=='l'){
+		glob_buffer.append( STRING_WITH_LEN("  SELECT thread_id, object_name, index_name, lock_type, lock_mode, lock_status, lock_data FROM performance_schema.data_locks;")); 
+    }
     //mysql> \\aurora 
     else if(STRCMP(full_user_command, ==, "\\\\aurora")){
 	puts("connect to MySQL on Amazon RDS SQL reference...");
@@ -5930,7 +5937,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
 	puts("└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘");
 	}
     else{
-        return put_info("Unknown command\n\n>> Usage ::\n   ─────────────────────────────────────────────────────────\n     tc{number}             : SHOW CREATE TABLE table\n     tc {table name}        : SHOW CREATE TABLE table\n     ts{number}             : SHOW STATUS TABLE LIKE 'table'\n     ts {table name}        : SHOW STATUS TABLE LIKE 'table'\n     tt                     : TABLE LIST\n     dc                     : CREATE DATABASE database\n     dds                    : Database Size\n     dds{number}            : Database Size Detail\n     dd{number}             : Choose Database\n     ps                     : SHOW PROCESSLIST\n     psf                    : SHOW FULL PROCESSLIST\n     uu                     : SHOW USERS\n     uuc{number}            : SHOW CREATE USER\n     uug{number}            : SHOW GRANTS FOR USER\n     sv                     : SESSION VARIABLES\n     vv                     : GLOBAL VARIABLES\n     gs                     : GLOBAL STATUS\n     ss                     : SESSION STATUS\n     qq{number} {table name}: SELECT LIMIT QUERY\n     aurora                 : OPEN AURORA PAGE\n     aurorakill             : KILL QUERY FOR AURORA\n     kill                   : KILL QUERY FOR MYSQL\n     \n   ─────────────────────────────────────────────────────────", INFO_ERROR, 0);
+        return put_info("Unknown command\n\n>> Usage ::\n   ─────────────────────────────────────────────────────────\n     tc{number}             : SHOW CREATE TABLE table\n     tc {table name}        : SHOW CREATE TABLE table\n     ts{number}             : SHOW STATUS TABLE LIKE 'table'\n     ts {table name}        : SHOW STATUS TABLE LIKE 'table'\n     tt                     : TABLE LIST\n     dc                     : CREATE DATABASE database\n     dds                    : Database Size\n     dds{number}            : Database Size Detail\n     dd{number}             : Choose Database\n     ps                     : SHOW PROCESSLIST\n     psf                    : SHOW FULL PROCESSLIST\n     uu                     : SHOW USERS\n     uuc{number}            : SHOW CREATE USER\n     uug{number}            : SHOW GRANTS FOR USER\n     sv                     : SESSION VARIABLES\n     gv                     : GLOBAL VARIABLES\n     gs                     : GLOBAL STATUS\n     ss                     : SESSION STATUS\n     qq{number} {table name}: SELECT LIMIT QUERY\n     ml                     : metadata lock\n     dl                     : data lock\n     aurora                 : OPEN AURORA PAGE\n     aurorakill             : KILL QUERY FOR AURORA\n     kill                   : KILL QUERY FOR MYSQL\n     \n   ─────────────────────────────────────────────────────────", INFO_ERROR, 0);
     }
     int rtn=0;
 
