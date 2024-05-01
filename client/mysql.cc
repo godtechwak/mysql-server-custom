@@ -2270,14 +2270,7 @@ static int read_and_execute(bool interactive) {
       */
             if (line) free(line);
             
-	    //silver
-	    //char* silver_buf = NULL;
-	    //const char *sql = "SELECT 'This is Result';"; 
-	    //silver_buf = (char *)malloc(strlen(sql)+1);
-	    //strcpy(silver_buf, sql);
-
 	    line = readline(prompt); //프롬프트의 입력을 받는다. writed by silver
-	    //line = silver_buf;
             if (sigint_received) {
                 sigint_received = false;
                 tee_puts("^C", stdout);
@@ -2401,8 +2394,6 @@ static COMMANDS *find_command(char cmd_char) {
      the command's pointer or NULL.
 */
 static COMMANDS *find_command(char *name) {
-    opt_silent = 0;
-    printf("\033[0m"); //Release Color by silver
     uint len;
     char *end;
     DBUG_TRACE;
@@ -3404,7 +3395,6 @@ static int com_go(String *buffer, char *line [[maybe_unused]]) {
                     print_table_data_vertically(result);
                 }
                 else if (opt_silent && verbose <= 2 && !output_tables) {
-                    //printf("This is opt_silent");
                     print_tab_data(result);
                 }
                 else {
@@ -5254,24 +5244,12 @@ static const char *construct_prompt() {
                     processed_prompt.append(current_db ? current_db : "(none)");
                     break;
                 case 'h': {
-		    const char *prompt;
+		            const char *prompt;
                     prompt = connected ? mysql_get_host_info(&mysql) : "not_connected";
-                    if (strstr(prompt, "Localhost")) {
-                        printf("\033[0;32m"); //Green by silver
-                        processed_prompt.append("localhost");
-                    }
-                    else {
-                        if (strstr(prompt, "prod"))
-                            printf("\033[0;31m"); //Red by silver
-                        else if (strstr(prompt, "dev") || strstr(prompt, "alpha")) 
-                            printf("\033[0;33m"); //Yellow by silver
-                        else
-                            printf("\033[0;32m"); //Green by silver
-                        const char *end = strcend(prompt, ' ');
-                        processed_prompt.append(prompt, (uint)(end - prompt));
-                    }			                  
-                    break;
-                }
+
+                    const char *end = strcend(prompt, ' ');
+                    processed_prompt.append(prompt, (uint)(end - prompt));
+                    } break;			                                      
                 case 'p': {
                     if (!connected) {
                         processed_prompt.append("not_connected");
@@ -5524,6 +5502,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         }
         
         if (user_command[2] == '0') {
+            puts("Not supported..\n");
             return 0;
         }
         MYSQL_RES *result=nullptr;
@@ -5594,6 +5573,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         }
         
         if (user_command[2] == '0'){
+            puts("Not supported..\n");
             return 0;
         }
         MYSQL_RES *result=nullptr;
@@ -5702,10 +5682,10 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         result = mysql_use_result(&mysql);
         MYSQL_ROW row = mysql_fetch_row(result);
 	
-	if (row == NULL) {
-	    puts("Database not exist\n");
-	    return 0;
-	}
+        if (row == NULL) {
+            puts("Database not exist\n");
+            return 0;
+        }
 	    
         strcat(chosen_database, row[0]); //선택한 데이터베이스 받아오기
 
@@ -5724,9 +5704,11 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
             return 0;
         }
 
-        if (isdigit(user_command[3]) && isalpha(user_command[4])) {
-            puts("Not supported..\n");
-            return 0;
+        for (int i = 3; i <= 4; i++) {
+            if (user_command[i] != '\0' && !isdigit(user_command[i])) {
+                puts("Not supported..\n");
+                return 0;
+            }
         }
 
         if (isdigit(user_command[3])==true){            
@@ -5736,7 +5718,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
             MYSQL_RES *result=nullptr;
             char chosen_database[100]="";
 
-            char cmd1[1000]="SELECT A.table_schema FROM (SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, SUM(index_length + data_length) AS index_data_size FROM information_schema.tables GROUP BY table_schema ORDER BY SUM(index_length + data_length)) AS A WHERE A.number = ";
+            char cmd1[1000]="SELECT A.table_schema FROM (SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, sys.format_bytes(SUM(index_length + data_length)) AS index_data_size FROM information_schema.tables GROUP BY table_schema ORDER BY SUM(index_length + data_length)) AS A WHERE A.number = ";
             char cmd2[4]={user_command[3], user_command[4]}; //{테이블 1의 자리, 테이블 10의 자리}
 
             strcat(cmd1, cmd2);
@@ -5753,7 +5735,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
 		
             strcat(chosen_database, row[0]); //선택한 데이터베이스 받아오기
 
-            glob_buffer.append( STRING_WITH_LEN(" SELECT A.table_name, A.table_schema, CASE WHEN LENGTH(A.index_data_size) > 3 AND LENGTH(A.index_data_size) < 7 THEN CONCAT(ROUND(A.index_data_size/1024, 2), '(KB)') WHEN LENGTH(A.index_data_size) > 6 AND LENGTH(A.index_data_size) < 10 THEN CONCAT(ROUND(A.index_data_size/1024/1024, 2), '(MB)') WHEN LENGTH(A.index_data_size) > 9 THEN CONCAT(ROUND(A.index_data_size/1024/1024/1024, 2), '(GB)') ELSE A.index_data_size END AS index_data_size, concat(case when 10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10)) != 0 then concat(repeat('+', (A.index_data_size/total_size*100)/10), repeat('_', (10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10))))) else repeat('+', (A.index_data_size/total_size*100)/10) end, '(', round((A.index_data_size/total_size*100), 1), '%)') as 'Percentage(%)', A.table_rows FROM( SELECT table_name, table_schema, SUM(index_length + data_length) AS index_data_size, MAX(table_rows) AS table_rows, (SELECT SUM(index_length + data_length) FROM information_schema.tables WHERE table_schema = '") );
+            glob_buffer.append( STRING_WITH_LEN(" SELECT A.table_name, A.table_schema, sys.format_bytes(index_data_size) AS index_data_size, concat(case when 10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10)) != 0 then concat(repeat('+', (A.index_data_size/total_size*100)/10), repeat('_', (10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10))))) else repeat('+', (A.index_data_size/total_size*100)/10) end, '(', round((A.index_data_size/total_size*100), 1), '%)') as 'Percentage(%)', FORMAT(A.table_rows, 0) AS table_rows FROM( SELECT table_name, table_schema, SUM(index_length + data_length) AS index_data_size, MAX(table_rows) AS table_rows, (SELECT SUM(index_length + data_length) FROM information_schema.tables WHERE table_schema = '") );
             glob_buffer.append( chosen_database, strlen(chosen_database) );
             glob_buffer.append( STRING_WITH_LEN("' ) AS total_size FROM information_schema.tables WHERE table_schema = '") );
             glob_buffer.append( chosen_database, strlen(chosen_database) );
@@ -5762,7 +5744,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
         }
         // mysql> \\dds
         else if(isdigit(user_command[3])==false){
-		    glob_buffer.append( STRING_WITH_LEN(" SELECT A.number, A.table_schema, CASE WHEN LENGTH(A.index_data_size) > 3 AND LENGTH(A.index_data_size) < 7 THEN CONCAT(ROUND(A.index_data_size/1024, 2), '(KB)') WHEN LENGTH(A.index_data_size) > 6 AND LENGTH(A.index_data_size) < 10 THEN CONCAT(ROUND(A.index_data_size/1024/1024, 2), '(MB)') WHEN LENGTH(A.index_data_size) > 9 THEN CONCAT(ROUND(A.index_data_size/1024/1024/1024, 2), '(GB)') ELSE A.index_data_size END AS index_data_size, concat(case when 10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10)) != 0 then concat(repeat('+', (A.index_data_size/total_size*100)/10), repeat('_', (10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10))))) else repeat('+', (A.index_data_size/total_size*100)/10) end, '(', round((A.index_data_size/total_size*100), 1), '%)') as 'Percentage(%)' FROM( SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, SUM(index_length + data_length) AS index_data_size, (SELECT SUM(index_length + data_length) FROM information_schema.tables) AS total_size FROM information_schema.tables GROUP BY table_schema) AS A ORDER BY A.number, A.table_schema;") );
+		    glob_buffer.append( STRING_WITH_LEN(" SELECT A.number, A.table_schema, sys.format_bytes(index_data_size) AS index_data_size, concat(case when 10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10)) != 0 then concat(repeat('+', (A.index_data_size/total_size*100)/10), repeat('_', (10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10))))) else repeat('+', (A.index_data_size/total_size*100)/10) end, '(', round((A.index_data_size/total_size*100), 1), '%)') as 'Percentage(%)' FROM( SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, SUM(index_length + data_length) AS index_data_size, (SELECT SUM(index_length + data_length) FROM information_schema.tables) AS total_size FROM information_schema.tables GROUP BY table_schema) AS A ORDER BY A.number, A.table_schema;") );
         }
     }
     //mysql> \\ps
