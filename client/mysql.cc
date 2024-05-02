@@ -5718,7 +5718,7 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
             MYSQL_RES *result=nullptr;
             char chosen_database[100]="";
 
-            char cmd1[1000]="SELECT A.table_schema FROM (SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, format_bytes(SUM(index_length + data_length)) AS index_data_size FROM information_schema.tables GROUP BY table_schema ORDER BY SUM(index_length + data_length)) AS A WHERE A.number = ";
+            char cmd1[1000]="SELECT A.table_schema FROM (SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, format_bytes(SUM(index_length + data_length)) AS index_data_size FROM information_schema.tables WHERE table_schema NOT IN ('information_schema', 'performance_schema') GROUP BY table_schema ORDER BY SUM(index_length + data_length)) AS A WHERE A.number = ";
             char cmd2[4]={user_command[3], user_command[4]}; //{테이블 1의 자리, 테이블 10의 자리}
 
             strcat(cmd1, cmd2);
@@ -5737,14 +5737,14 @@ static int com_extra(String *buffer MY_ATTRIBUTE((unused)), char *line) {
 
             glob_buffer.append( STRING_WITH_LEN(" SELECT A.table_name, A.table_schema, format_bytes(index_data_size) AS index_data_size, concat(case when 10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10)) != 0 then concat(repeat('+', (A.index_data_size/total_size*100)/10), repeat('_', (10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10))))) else repeat('+', (A.index_data_size/total_size*100)/10) end, '(', round((A.index_data_size/total_size*100), 1), '%)') as 'Percentage(%)', FORMAT(A.table_rows, 0) AS table_rows FROM( SELECT table_name, table_schema, SUM(index_length + data_length) AS index_data_size, MAX(table_rows) AS table_rows, (SELECT SUM(index_length + data_length) FROM information_schema.tables WHERE table_schema = '") );
             glob_buffer.append( chosen_database, strlen(chosen_database) );
-            glob_buffer.append( STRING_WITH_LEN("' ) AS total_size FROM information_schema.tables WHERE table_schema = '") );
+            glob_buffer.append( STRING_WITH_LEN("' ) AS total_size FROM information_schema.tables WHERE table_schema NOT IN ('information_schema', 'performance_schema') AND table_schema = '") );
             glob_buffer.append( chosen_database, strlen(chosen_database) );
             glob_buffer.append( STRING_WITH_LEN("' GROUP BY table_name ORDER BY index_data_size) AS A") );
             mysql_free_result(result);
         }
         // mysql> \\dds
         else if(isdigit(user_command[3])==false){
-		    glob_buffer.append( STRING_WITH_LEN(" SELECT A.number, A.table_schema, format_bytes(index_data_size) AS index_data_size, concat(case when 10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10)) != 0 then concat(repeat('+', (A.index_data_size/total_size*100)/10), repeat('_', (10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10))))) else repeat('+', (A.index_data_size/total_size*100)/10) end, '(', round((A.index_data_size/total_size*100), 1), '%)') as 'Percentage(%)' FROM( SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, SUM(index_length + data_length) AS index_data_size, (SELECT SUM(index_length + data_length) FROM information_schema.tables) AS total_size FROM information_schema.tables GROUP BY table_schema) AS A ORDER BY A.number, A.table_schema;") );
+		    glob_buffer.append( STRING_WITH_LEN(" SELECT A.number, A.table_schema, format_bytes(index_data_size) AS index_data_size, concat(case when 10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10)) != 0 then concat(repeat('+', (A.index_data_size/total_size*100)/10), repeat('_', (10 - char_length(repeat('+', (A.index_data_size/total_size*100)/10))))) else repeat('+', (A.index_data_size/total_size*100)/10) end, '(', round((A.index_data_size/total_size*100), 1), '%)') as 'Percentage(%)' FROM( SELECT row_number()over(order by SUM(index_length + data_length)) AS number, table_schema, SUM(index_length + data_length) AS index_data_size, (SELECT SUM(index_length + data_length) FROM information_schema.tables) AS total_size FROM information_schema.tables WHERE table_schema NOT IN ('information_schema', 'performance_schema') GROUP BY table_schema) AS A ORDER BY A.number, A.table_schema;") );
         }
     }
     //mysql> \\ps
