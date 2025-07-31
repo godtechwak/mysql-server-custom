@@ -2,6 +2,8 @@
 #### Decompression
 ```
 tar xvf mysql_custom_cmd_mac.tar.gz
+or
+tar xvf mysql_latest_arm64.tar.gz
 ```
 
 #### Rename the existing MySQL binary file
